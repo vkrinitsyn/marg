@@ -2,7 +2,7 @@
 name = "marg"
 version = "0.1.0"
 edition = "2021"
-authors = ["V.K."]
+authors = ["Vlad Krinitsyn <v.krinitsyn@gmail.com>"]
 license = "MIT"
 description = "Meta config for apps from args"
 homepage = "https://github.com/vkrinitsyn/marg.git"

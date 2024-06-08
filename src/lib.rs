@@ -144,9 +144,23 @@ impl ArgConfig {
                 token.unwrap_or(get_env_or_cfg(CMD_TOKEN, &cfg, "")),
                 ttl.unwrap_or(get_env_or_cfg(CMD_TTL, &cfg, "1")),
                 pwd
-            ),
+            )?,
             cfg,
         })
+    }
+
+    /// append with password if $PWD present in 'db'
+    pub fn db_url(&self) -> String {
+        let url = self.db_url.clone();
+        if let Some(i) = url.find(":$P") {
+            if let Some(y) = url.find("@") {
+                let pwd = url.as_str()[i+1..y].to_owned();
+                return url.replace(
+                    pwd.as_str(),
+                    self.token.value.clone().unwrap_or("".into()).as_str()).to_string();
+            }
+        }
+        url
     }
 }
 #[inline]

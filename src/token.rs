@@ -19,15 +19,23 @@ pub struct Token {
 }
 
 impl Token {
-    pub(crate) fn new(cmd: String, ttl: String, pwd: Option<String>) -> Self {
+    pub(crate) fn new(cmd: String, ttl: String, pwd: Option<String>) -> Result<Self, String> {
         let min = ttl.parse::<u16>().unwrap_or(60);
-        Token {
+        let t = Token {
             refreshed: Instant::now(),
             ttl: Duration::from_secs(min as u64 * 60),
             min,
             cmd,
             value: pwd,
+        };
+        #[cfg(feature="token")]
+        {
+            let mut t = t;
+            let _ = t.refresh()?;
+            Ok(t)
         }
+        #[cfg(not(feature="token"))]
+        Ok(t)
     }
 
     /// load password from running specified command
