@@ -7,8 +7,8 @@ license = "MIT"
 description = "Meta config for apps from args"
 homepage = "https://github.com/vkrinitsyn/marg.git"
 repository = "https://github.com/vkrinitsyn/marg.git"
-[dependencies]
-uuid = { version = "1.8.0", features = ["v4"] }
+#[dependencies]
+#uuid = { version = "1.8.0", features = ["v4"] }
 
 [features]
 # at least one db feature is better to set
