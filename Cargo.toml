@@ -1,0 +1,25 @@
+[package]
+name = "marg"
+version = "0.1.0"
+edition = "2021"
+authors = ["V.K."]
+license = "MIT"
+description = "Meta config for apps from args"
+homepage = "https://github.com/vkrinitsyn/marg.git"
+repository = "https://github.com/vkrinitsyn/marg.git"
+[dependencies]
+uuid = { version = "1.8.0", features = ["v4"] }
+
+[features]
+# at least one db feature is better to set
+default = ["postgres"]
+# default
+postgres = []
+#
+sqlite = []
+
+# pull password from az account
+token = []
+
+
+
