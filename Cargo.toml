@@ -21,5 +21,8 @@ sqlite = []
 # pull password from az account
 token = []
 
+# check for key text file
+rsa = []
+
 
 

@@ -1,17 +1,22 @@
 mod feature;
 pub mod token;
+pub mod pkcs;
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use crate::feature::{featured, SupportedDb};
+use crate::pkcs::Pk;
 
 const CMD_FILE: &str = "file";
 const CMD_DB: &str = "db";
 const CMD_TBL: &str = "config";
 const CMD_TOKEN: &str = "token";
 const CMD_TTL: &str = "ttl";
+const CMD_PK: &str = "pk";
+const CMD_PASS: &str = "PASSPHRASE";
+
 
 /// App startup args:
 /// - db connection url: usually the first arg
@@ -22,11 +27,14 @@ const CMD_TTL: &str = "ttl";
 ///   - or prefix with: '--config '
 ///     (optional, default public.{the_appname})
 ///
-/// - token script name usually the third arg (required feature 'token')
+/// - token (db pwd) script name usually the third arg (required feature 'token')
 ///   - or prefix with '--token '
 ///
 /// - token live in minutes, usually the forth arg (required feature 'token')
 ///   - or prefix with '--ttl '
+///
+/// - Private Key text file name to use with RSA encryption (required feature 'rsa')
+///   - or prefix with '--pk '
 ///
 /// Alternative configuration:
 /// - file name, usually the first arg
@@ -35,13 +43,15 @@ const CMD_TTL: &str = "ttl";
 /// File format:
 ///  - db: OR db=
 ///  - config: OR config=
-///  - token
-///  - ttl
+///  - token: OR token=
+///  - ttl: OR ttl=
+///  - pk: OR pk=
 ///
 /// params passed in cmd line override params loaded from file & env.
 ///
 /// env:
 /// PGPASSWORD, in case of postgres db url, use to connect to the DB
+/// PASSPHRASE, in case of RSA private key required a passphrase
 ///
 #[derive(Debug, Clone)]
 pub struct ArgConfig {
@@ -50,10 +60,11 @@ pub struct ArgConfig {
     /// Format: schema.talbe
     pub table: String,
 
-    /// если первый аргумент в виде файла config file
     pub cfg: HashMap<String, String>,
 
-    pub token: token::Token
+    pub token: token::Token,
+
+    pub pk: Option<Pk>,
 }
 
 
@@ -84,6 +95,7 @@ impl ArgConfig {
         let mut tbl: Option<String>  = None;
         let mut token: Option<String>  = None;
         let mut ttl: Option<String>  = None;
+        let mut pk: Option<String>  = None;
         let mut ignore_next = true;
         for i in 1..input.len() {
             if ignore_next {continue}
@@ -105,6 +117,12 @@ impl ArgConfig {
                     } else if v == CMD_TTL {
                         ttl = Some(input[i + 1].to_string());
                         ignore_next = true;
+                    } else if v == CMD_PK {
+                        let file = input[i + 1].to_string();
+                        if pkcs::is_pk_file(&file) {
+                            pk = Some(file);
+                            ignore_next = true;
+                        }
                     }
                 }
             } else {
@@ -144,6 +162,10 @@ impl ArgConfig {
                 token.unwrap_or(get_env_or_cfg(CMD_TOKEN, &cfg, "")),
                 ttl.unwrap_or(get_env_or_cfg(CMD_TTL, &cfg, "1")),
                 pwd
+            )?,
+            pk: pkcs::Pk::new(
+                pk.unwrap_or(get_env_or_cfg(CMD_PK, &cfg, "")),
+                std::env::var_os(CMD_PASS).map(|p| p.to_string_lossy().to_string()),
             )?,
             cfg,
         })
