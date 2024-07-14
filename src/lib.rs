@@ -69,7 +69,17 @@ pub struct ArgConfig {
 
 
 impl ArgConfig {
+    #[cfg(not(feature="rsa"))]
     pub fn from_args() -> Result<ArgConfig, String> {
+        ArgConfig::from_args_impl(None)
+    }
+
+    #[cfg(feature="rsa")]
+    pub fn from_args(rsa_file_def: Option<&str>) -> Result<ArgConfig, String> {
+        ArgConfig::from_args_impl(rsa_file_def)
+    }
+
+    fn from_args_impl(rsa_file_def: Option<&str>) -> Result<ArgConfig, String> {
         let user = match std::env::var_os("USER") {
             Some(a) => a.to_str().unwrap_or("postgres").to_string(),
             _ => "postgres".to_string(),
@@ -85,11 +95,11 @@ impl ArgConfig {
         };
         let input: Vec<String> = std::env::args_os().map(|e| e.to_string_lossy().to_string()).collect();
 
-        ArgConfig::new(input, f, user, pwd)
+        ArgConfig::new(input, f, user, pwd, rsa_file_def)
     }
 
     /// first arg is an app itself
-    fn new(input: Vec<String>, feature: SupportedDb, user: String, pwd: Option<String>) -> Result<Self, String> {
+    fn new(input: Vec<String>, feature: SupportedDb, user: String, pwd: Option<String>, rsa_file_def: Option<&str>) -> Result<Self, String> {
         let mut cfg = HashMap::new();
         let mut db: Option<String> = None;
         let mut tbl: Option<String>  = None;
@@ -129,14 +139,10 @@ impl ArgConfig {
             }
         }
         // first was a check by tag names, then try to guess
-
-        ignore_next = true;
-
         for i in &input {
             if i.starts_with("--") {
-                ignore_next = true;
+                continue
             }
-            if ignore_next {continue}
             if db.is_none() && feature.is_valid_url(i) {
                 db = Some(i.to_string());
                 continue
@@ -146,17 +152,17 @@ impl ArgConfig {
                 continue
             }
             if token.is_none() && i.len() > 1 {
-                tbl = Some(i.to_string());
+                token = Some(i.to_string());
                 continue
             }
-            if tbl.is_none() && i.parse::<u16>().is_ok() {
-                tbl = Some(i.to_string());
+            if ttl.is_none() && i.parse::<u16>().is_ok() {
+                ttl = Some(i.to_string());
 
             }
         }
 
         Ok(ArgConfig {
-            db_url: db.unwrap_or(get_env_or_cfg(CMD_DB, &cfg, feature.default_url(&user).as_str())),
+            db_url: link_db_user(db.unwrap_or(get_env_or_cfg(CMD_DB, &cfg, feature.default_url(&user).as_str())), user),
             table: tbl.unwrap_or(get_env_or_cfg(CMD_TBL, &cfg, get_exec_name(input[0].as_str()).as_str())),
             token: token::Token::new(
                 token.unwrap_or(get_env_or_cfg(CMD_TOKEN, &cfg, "")),
@@ -164,8 +170,9 @@ impl ArgConfig {
                 pwd
             )?,
             pk: pkcs::Pk::new(
-                pk.unwrap_or(get_env_or_cfg(CMD_PK, &cfg, "")),
+                pk.unwrap_or(get_env_or_cfg(CMD_PK, &cfg, rsa_file_def.as_ref().unwrap_or(&""))),
                 std::env::var_os(CMD_PASS).map(|p| p.to_string_lossy().to_string()),
+                rsa_file_def
             )?,
             cfg,
         })
@@ -185,6 +192,12 @@ impl ArgConfig {
         url
     }
 }
+
+#[inline]
+fn link_db_user(url: String, user: String) -> String {
+    url.replace("$USER", user.as_str())
+}
+
 #[inline]
 fn get_env_or_cfg(input: &str, cfg: &HashMap<String, String>, def: &str) -> String {
     match std::env::var_os(input).map(|v| v) {
@@ -245,85 +258,49 @@ mod tests {
         assert_eq!(get_exec_name("target\\\\debug\\\\marg.exe").as_str(), "marg");
     }
 
-    /*
-    #[inline]
-    fn uuid() -> String {
-        let x = Uuid::new_v4();
-        x.hyphenated().to_string()[..8].into()
-    }
-
     #[test]
     fn config_args_file1_test() {
-        let f = format!("/tmp/yt-{}.cfg", uuid());
-        fs::write(&f, "db=p\nconfig=c").ok();
-        let cfg = ["test".to_string(), f.clone()].to_vec();
-        let cfg = ArgConfig::new(cfg, , ).unwrap();
-        assert_eq!(cfg.db_url.as_str(), "p");
-        assert_eq!(cfg.table.as_str(), "public.c");
-        fs::remove_file(&f).ok();
+        //
+        let cfg = ArgConfig::new(
+            vec!["".to_string()],
+                 SupportedDb::Postgres, "".to_string(), None, None).unwrap();
+        assert_eq!(0, cfg.cfg.len());
+
     }
 
     #[test]
     fn config_args_file2_test() {
-        let f = format!("/tmp/yt-{}.cfg", uuid());
-        fs::write(&f, "db = p\nconfig : c").ok();
-        let cfg = ["test".to_string(), f.clone()].to_vec();
-        let cfg = ArgConfig::new(cfg, , ).unwrap();
-        assert_eq!(cfg.db_url.as_str(), "p");
-        assert_eq!(cfg.table.as_str(), "public.c");
-        fs::remove_file(&f).ok();
+        let url =  "postgresql://user:pwd@host/db".to_string();
+        let cfg = ArgConfig::new(
+            vec![url.clone()],
+                 SupportedDb::Postgres, "vk".to_string(), None, None).unwrap();
+        assert_eq!(url, cfg.db_url());
     }
 
     #[test]
-    fn config_args_1_test() {
-        let cfg = ["test".to_string(), "postgresql://db".to_string()].to_vec();
-        let cfg = ArgConfig::new(cfg, , ).unwrap();
-        assert_eq!(cfg.db_url.as_str(), "postgresql://db");
+    fn config_args_file3_test() {
+        let url =  "postgresql://user:pwd@host/db".to_string();
+        let t = "public.table".to_string();
+        let cfg = ArgConfig::new(
+            vec![url.clone(), t.clone()],
+                 SupportedDb::Postgres, "".to_string(), None, None).unwrap();
+        assert_eq!(url, cfg.db_url());
+        assert_eq!(t, cfg.table);
     }
 
     #[test]
-    fn config_args_2_test() {
-        let cfg = ["test".to_string(), "postgresql://db".to_string(), "c".to_string()].to_vec();
-        let cfg = ArgConfig::new(cfg, , ).unwrap();
-        assert_eq!(cfg.db_url.as_str(), "postgresql://db");
-        assert_eq!(cfg.table.as_str(), "public.c");
-    }
+    fn config_args_user_test() {
+        let user = match std::env::var_os("USER") {
+            Some(a) => a.to_str().unwrap_or("postgres").to_string(),
+            _ => "postgres".to_string(),
+        };
 
-    #[test]
-    fn config_args_3_test() {
-        let cfg = ["test".to_string(), "db".to_string(), "c".to_string(), "c".to_string()].to_vec();
-        match ArgConfig::new(cfg, , ) {
-            Ok(_) => {
-                assert!(false);
-            }
-            Err(_) => {
-                assert!(true)
-            }
-        }
-    }
+        assert_eq!(format!("postgresql://{}:pwd@host/db", user), link_db_user("postgresql://$USER:pwd@host/db".to_string(), user.clone()));
+        assert_eq!(format!("postgresql://{}:$PWD@host/db", user), link_db_user("postgresql://$USER:$PWD@host/db".to_string(), user.clone()));
+        assert_eq!(format!("postgresql://{}@host/db", user), link_db_user("postgresql://$USER@host/db".to_string(), user.clone()));
+        assert_eq!(format!("postgresql://{}@host/db", ""), link_db_user("postgresql://@host/db".to_string(), user.clone()));
 
-    // #[test]
-    fn config_args_4_test() {
-        match ArgConfig::new(Vec::new(), , ) {
-            Ok(_) => {
-                assert!(false);
-            }
-            Err(_) => {
-                assert!(true)
-            }
-        }
     }
 
 
-    #[test]
-    fn config_args_parsing_test() {
-        assert_eq!("".to_string(), ArgConfig::parse_table_name(&"".to_string(), &"".to_string()));
-        assert_eq!(format!("s.{}", ytcc::DEFAULT_TABLE),
-                   ArgConfig::parse_table_name(&"".to_string(), &"s.".to_string()));
-        assert_eq!(format!("{}.t", ytcc::DEFAULT_SCHEMA),
-                   ArgConfig::parse_table_name(&"".to_string(), &".t".to_string()));
-        assert_eq!(format!("{}.t", ytcc::DEFAULT_SCHEMA),
-                   ArgConfig::parse_table_name(&"".to_string(), &"t".to_string()));
-    }
-*/
 }

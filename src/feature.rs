@@ -58,7 +58,7 @@ impl SupportedDb {
         }
     }
 
-    pub const DEFAULT_PG_URL: &'static str = "postgresql://$USER@postgres?host=/var/run/postgresql";
+    pub const DEFAULT_PG_URL: &'static str = "postgresql://$USER:$PGPASSWORD@postgres?host=/var/run/postgresql";
 
     /// append enum dependent values in case of a new capabilities
     pub(crate) fn env_pwd(&self) -> String {

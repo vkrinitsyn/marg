@@ -1,3 +1,4 @@
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 /**
@@ -31,7 +32,9 @@ impl Token {
         #[cfg(feature="token")]
         {
             let mut t = t;
-            let _ = t.refresh()?;
+            if !t.cmd.is_empty() {
+                let _ = t.refresh()?;
+            }
             Ok(t)
         }
         #[cfg(not(feature="token"))]
@@ -39,9 +42,35 @@ impl Token {
     }
 
     /// load password from running specified command
+    /// check before call:
+    ///
+    /// `self.refreshed.elapsed() > self.ttl`
     #[cfg(feature="token")]
     pub fn refresh(&mut self) -> Result<Duration, String> {
-
-        unimplemented!()
+        if self.cmd.is_empty() {
+            return Err("Not configured".to_string());
+        } else {
+            let cmd:Vec<&str> = self.cmd.split(" ").collect();
+            let mut c = Command::new(cmd[0]);
+            if cmd.len() > 1 {
+                c.args(&cmd[1..]);
+            }
+            match c.output() {
+                Ok(out) => {
+                    if out.status.success() {
+                        let value = String::from_utf8(out.stdout).map_err(|e| format!("parsing output of {} {}", self.cmd, e))?;
+                        self.value = Some(value);
+                        self.refreshed = Instant::now();
+                        Ok(self.ttl.clone())
+                    } else {
+                        let value = String::from_utf8(out.stderr).map_err(|e| format!("parsing error of {} {}", self.cmd, e))?;
+                        Err(value)
+                    }
+                }
+                Err(e) => {
+                    Err(format!("[{}] {}", self.cmd, e))
+                }
+            }
+        }
     }
 }
