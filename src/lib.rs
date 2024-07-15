@@ -147,7 +147,7 @@ impl ArgConfig {
                 db = Some(i.to_string());
                 continue
             }
-            if tbl.is_none() && i.find(".").is_some() {
+            if tbl.is_none() && is_sound_schema_table(i) {
                 tbl = Some(i.to_string());
                 continue
             }
@@ -210,12 +210,23 @@ fn get_env_or_cfg(input: &str, cfg: &HashMap<String, String>, def: &str) -> Stri
 #[inline]
 fn get_exec_name(input: &str) -> String {
     let e = Path::new(input);
-    if e.exists() {
-        let f = e.file_name().map(|f|f.to_str().unwrap_or("")).unwrap_or("").to_string();
-        f.replace(".exe", "")
+    let name = e.file_name().map(|f|f.to_str().unwrap_or("")).unwrap_or("").to_string();
+    #[cfg(windows)]
+    let name = name.replace(".exe", "");
+    let name = if let Some(i) = name.rfind(std::path::MAIN_SEPARATOR_STR) {
+        name[i+1..].to_string()
     } else {
-        "".into()
-    }
+        name
+    };
+    format!("public.{}", name)
+}
+
+#[inline]
+fn is_sound_schema_table(input: &str) -> bool {
+    let y = input.contains(".");
+    #[cfg(windows)]
+    let y = y && !input.ends_with(".exe");
+    y
 }
 
 #[inline]
