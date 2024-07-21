@@ -1,6 +1,6 @@
 [package]
 name = "marg"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["Vlad Krinitsyn <v.krinitsyn@gmail.com>"]
 license = "MIT"
@@ -18,11 +18,10 @@ postgres = []
 #
 sqlite = []
 
-# pull password from az account
+# pull temorary password, like session token from a script run
 token = []
 
-# check for key text file
-rsa = []
+# check for key text file, to use for RSA of AES
+key = []
 
-
-
+## cargo test --features token

@@ -1,20 +1,20 @@
 mod feature;
 pub mod token;
-pub mod pkcs;
+pub mod key;
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use crate::feature::{featured, SupportedDb};
-use crate::pkcs::Pk;
+use crate::key::KeyFile;
 
 const CMD_FILE: &str = "file";
 const CMD_DB: &str = "db";
 const CMD_TBL: &str = "config";
 const CMD_TOKEN: &str = "token";
 const CMD_TTL: &str = "ttl";
-const CMD_PK: &str = "pk";
+const CMD_KEY: &str = "key";
 const CMD_PASS: &str = "PASSPHRASE";
 
 
@@ -33,8 +33,8 @@ const CMD_PASS: &str = "PASSPHRASE";
 /// - token live in minutes, usually the forth arg (required feature 'token')
 ///   - or prefix with '--ttl '
 ///
-/// - Private Key text file name to use with RSA encryption (required feature 'rsa')
-///   - or prefix with '--pk '
+/// - Private Key text file name to use with RSA OR AES encryption (required feature 'rsa')
+///   - or prefix with '--key '
 ///
 /// Alternative configuration:
 /// - file name, usually the first arg
@@ -64,22 +64,22 @@ pub struct ArgConfig {
 
     pub token: token::Token,
 
-    pub pk: Option<Pk>,
+    pub pk: Option<KeyFile>,
 }
 
 
 impl ArgConfig {
-    #[cfg(not(feature="rsa"))]
+    #[cfg(not(feature="key"))]
     pub fn from_args() -> Result<ArgConfig, String> {
         ArgConfig::from_args_impl(None)
     }
 
-    #[cfg(feature="rsa")]
-    pub fn from_args(rsa_file_def: Option<&str>) -> Result<ArgConfig, String> {
-        ArgConfig::from_args_impl(rsa_file_def)
+    #[cfg(feature="key")]
+    pub fn from_args(file_def: Option<&str>) -> Result<ArgConfig, String> {
+        ArgConfig::from_args_impl(file_def)
     }
 
-    fn from_args_impl(rsa_file_def: Option<&str>) -> Result<ArgConfig, String> {
+    fn from_args_impl(file_def: Option<&str>) -> Result<ArgConfig, String> {
         let user = match std::env::var_os("USER") {
             Some(a) => a.to_str().unwrap_or("postgres").to_string(),
             _ => "postgres".to_string(),
@@ -95,11 +95,11 @@ impl ArgConfig {
         };
         let input: Vec<String> = std::env::args_os().map(|e| e.to_string_lossy().to_string()).collect();
 
-        ArgConfig::new(input, f, user, pwd, rsa_file_def)
+        ArgConfig::new(input, f, user, pwd, file_def)
     }
 
     /// first arg is an app itself
-    fn new(input: Vec<String>, feature: SupportedDb, user: String, pwd: Option<String>, rsa_file_def: Option<&str>) -> Result<Self, String> {
+    fn new(input: Vec<String>, feature: SupportedDb, user: String, pwd: Option<String>, file_def: Option<&str>) -> Result<Self, String> {
         let mut cfg = HashMap::new();
         let mut db: Option<String> = None;
         let mut tbl: Option<String>  = None;
@@ -127,9 +127,9 @@ impl ArgConfig {
                     } else if v == CMD_TTL {
                         ttl = Some(input[i + 1].to_string());
                         ignore_next = true;
-                    } else if v == CMD_PK {
+                    } else if v == CMD_KEY {
                         let file = input[i + 1].to_string();
-                        if pkcs::is_pk_file(&file) {
+                        if key::is_key_file(&file) {
                             pk = Some(file);
                             ignore_next = true;
                         }
@@ -163,16 +163,16 @@ impl ArgConfig {
 
         Ok(ArgConfig {
             db_url: link_db_user(db.unwrap_or(get_env_or_cfg(CMD_DB, &cfg, feature.default_url(&user).as_str())), user),
-            table: tbl.unwrap_or(get_env_or_cfg(CMD_TBL, &cfg, get_exec_name(input[0].as_str()).as_str())),
+            table: tbl.unwrap_or(get_env_or_cfg(CMD_TBL, &cfg, get_exec_name("public.", input[0].as_str()).as_str())),
             token: token::Token::new(
                 token.unwrap_or(get_env_or_cfg(CMD_TOKEN, &cfg, "")),
                 ttl.unwrap_or(get_env_or_cfg(CMD_TTL, &cfg, "1")),
                 pwd
             )?,
-            pk: pkcs::Pk::new(
-                pk.unwrap_or(get_env_or_cfg(CMD_PK, &cfg, rsa_file_def.as_ref().unwrap_or(&""))),
+            pk: key::KeyFile::new(
+                pk.unwrap_or(get_env_or_cfg(CMD_KEY, &cfg, file_def.as_ref().unwrap_or(&""))),
                 std::env::var_os(CMD_PASS).map(|p| p.to_string_lossy().to_string()),
-                rsa_file_def
+                file_def
             )?,
             cfg,
         })
@@ -208,7 +208,10 @@ fn get_env_or_cfg(input: &str, cfg: &HashMap<String, String>, def: &str) -> Stri
 
 /// Safe taking value
 #[inline]
-fn get_exec_name(input: &str) -> String {
+fn get_exec_name(schema: &str, input: &str) -> String {
+    if input.is_empty() {
+        return "".to_string();
+    }
     let e = Path::new(input);
     let name = e.file_name().map(|f|f.to_str().unwrap_or("")).unwrap_or("").to_string();
     #[cfg(windows)]
@@ -218,7 +221,7 @@ fn get_exec_name(input: &str) -> String {
     } else {
         name
     };
-    format!("public.{}", name)
+    format!("{}{}", schema, name)
 }
 
 #[inline]
@@ -256,17 +259,17 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn test_file_name() {
-        assert_eq!(get_exec_name("").as_str(), "");
-        assert_eq!(get_exec_name("target/debug/marg").as_str(), "marg");
-        assert_eq!(get_exec_name("marg").as_str(), "marg");
+        assert_eq!(get_exec_name("","").as_str(), "");
+        assert_eq!(get_exec_name("","target/debug/marg").as_str(), "marg");
+        assert_eq!(get_exec_name("","marg").as_str(), "marg");
     }
 
     #[test]
     #[cfg(windows)]
     fn test_file_name() {
-        assert_eq!(get_exec_name("").as_str(), "");
-        assert_eq!(get_exec_name("target\\debug\\marg.exe").as_str(), "marg");
-        assert_eq!(get_exec_name("target\\\\debug\\\\marg.exe").as_str(), "marg");
+        assert_eq!(get_exec_name("","").as_str(), "");
+        assert_eq!(get_exec_name("","target\\debug\\marg.exe").as_str(), "marg");
+        assert_eq!(get_exec_name("","target\\\\debug\\\\marg.exe").as_str(), "marg");
     }
 
     #[test]

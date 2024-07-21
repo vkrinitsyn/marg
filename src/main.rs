@@ -1,10 +1,10 @@
 use marg::ArgConfig;
 
-#[cfg(not(feature="rsa"))]
+#[cfg(not(feature="key"))]
 fn main() {
     let _test_run = ArgConfig::from_args();
 }
-#[cfg(feature="rsa")]
+#[cfg(feature="key")]
 fn main() {
     let _test_run = ArgConfig::from_args(None);
 }
