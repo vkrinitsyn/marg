@@ -1,14 +1,14 @@
 [package]
 name = "marg"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 authors = ["Vlad Krinitsyn <v.krinitsyn@gmail.com>"]
 license = "MIT"
 description = "Meta config for apps from args"
 homepage = "https://github.com/vkrinitsyn/marg.git"
 repository = "https://github.com/vkrinitsyn/marg.git"
-#[dependencies]
-#uuid = { version = "1.8.0", features = ["v4"] }
+[dependencies]
+uuid = { version = "1.10.0", features = ["v4"] }
 
 [features]
 # at least one db feature is better to set

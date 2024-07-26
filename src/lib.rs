@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use uuid::Uuid;
 use crate::feature::{featured, SupportedDb};
 use crate::key::KeyFile;
 
@@ -16,6 +17,8 @@ const CMD_TOKEN: &str = "token";
 const CMD_TTL: &str = "ttl";
 const CMD_KEY: &str = "key";
 const CMD_PASS: &str = "PASSPHRASE";
+/// self host or node id
+const CMD_UUID: &str = "uuid";
 
 
 /// App startup args:
@@ -33,7 +36,10 @@ const CMD_PASS: &str = "PASSPHRASE";
 /// - token live in minutes, usually the forth arg (required feature 'token')
 ///   - or prefix with '--ttl '
 ///
-/// - Private Key text file name to use with RSA OR AES encryption (required feature 'rsa')
+/// - UUID this app instance to use as a node id or config recognition. Identified as UUID formatted string.
+///   - or prefix with '--uuid '
+///
+/// - (Private) Key text file name to use with RSA OR AES encryption (required feature 'rsa')
 ///   - or prefix with '--key '
 ///
 /// Alternative configuration:
@@ -44,6 +50,7 @@ const CMD_PASS: &str = "PASSPHRASE";
 ///  - db: OR db=
 ///  - config: OR config=
 ///  - token: OR token=
+///  - uuid: OR uuid=
 ///  - ttl: OR ttl=
 ///  - pk: OR pk=
 ///
@@ -55,6 +62,8 @@ const CMD_PASS: &str = "PASSPHRASE";
 ///
 #[derive(Debug, Clone)]
 pub struct ArgConfig {
+    pub uuid: Uuid,
+    pub uuid_gen: bool,
     pub db_url: String,
 
     /// Format: schema.talbe
@@ -104,8 +113,10 @@ impl ArgConfig {
         let mut db: Option<String> = None;
         let mut tbl: Option<String>  = None;
         let mut token: Option<String>  = None;
+
         let mut ttl: Option<String>  = None;
         let mut pk: Option<String>  = None;
+        let mut uuid: Option<Uuid> = None;
         let mut ignore_next = true;
         for i in 1..input.len() {
             if ignore_next {continue}
@@ -133,6 +144,9 @@ impl ArgConfig {
                             pk = Some(file);
                             ignore_next = true;
                         }
+                    } else if v == CMD_UUID {
+                        uuid = Uuid::parse_str(input[i + 1].as_str()).ok();
+                        ignore_next = true;
                     }
                 }
             } else {
@@ -157,11 +171,18 @@ impl ArgConfig {
             }
             if ttl.is_none() && i.parse::<u16>().is_ok() {
                 ttl = Some(i.to_string());
-
             }
+            if uuid.is_none() {
+                uuid = Uuid::parse_str(i).ok();
+            }
+        }
+        if uuid.is_none() {
+            uuid  = Uuid::parse_str(get_env_or_cfg(CMD_UUID, &cfg, "").as_str()).ok();
         }
 
         Ok(ArgConfig {
+            uuid_gen: uuid.is_none(),
+            uuid: uuid.unwrap_or(Uuid::new_v4()),
             db_url: link_db_user(db.unwrap_or(get_env_or_cfg(CMD_DB, &cfg, feature.default_url(&user).as_str())), user),
             table: tbl.unwrap_or(get_env_or_cfg(CMD_TBL, &cfg, get_exec_name("public.", input[0].as_str()).as_str())),
             token: token::Token::new(
