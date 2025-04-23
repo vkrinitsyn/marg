@@ -1,14 +1,14 @@
 [package]
 name = "marg"
-version = "0.3.0"
-edition = "2021"
-authors = ["Vlad Krinitsyn <v.krinitsyn@gmail.com>"]
+version = "0.3.1"
+edition = "2024"
+authors = ["Vladimir Krinitsyn <v.krinitsyn@gmail.com>"]
 license = "MIT"
 description = "Meta config for apps from args"
 homepage = "https://github.com/vkrinitsyn/marg.git"
 repository = "https://github.com/vkrinitsyn/marg.git"
 [dependencies]
-uuid = { version = "1.10.0", features = ["v4"] }
+uuid = { version = "^1", features = ["v4"] }
 
 [features]
 # at least one db feature is better to set
@@ -23,5 +23,8 @@ token = []
 
 # check for key text file, to use for RSA of AES
 key = []
+
+# if key set in env, the key will be kleanup after read
+keep_env_secret = []
 
 ## cargo test --features token

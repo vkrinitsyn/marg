@@ -38,7 +38,7 @@ pub(crate) fn is_key_file(_file: &String) -> bool {
 
 impl KeyFile {
     #[cfg(not(feature="key"))]
-    pub(crate) fn new(_file: String, _passphrase: Option<String>, _file_def: Option<&str>) -> Result<Option<Self>, String> {
+    pub(crate) fn new(_file: String, _passphrase: Option<String>) -> Result<Option<Self>, String> {
         return Ok(None)
     }
 
@@ -46,15 +46,7 @@ impl KeyFile {
     ///
     /// pass if set and utf format
     #[cfg(feature="key")]
-    pub(crate) fn new(key_file: String, passphrase: Option<String>, key_file_def: Option<&str>) -> Result<Option<Self>, String> {
-        let file = if key_file.is_empty() {
-            match key_file_def {
-                None => "".to_string(),
-                Some(file) => file.to_string()
-            }
-        } else {
-            key_file
-        };
+    pub(crate) fn new(file: String, passphrase: Option<String>) -> Result<Option<Self>, String> {
         if file.is_empty() {
             return Ok(None);
         }
@@ -78,7 +70,7 @@ mod tests {
     #[test]
     #[cfg(feature = "key")]
     fn test() {
-        let pk = KeyFile::new("".to_string(), None, Some(""));
+        let pk = KeyFile::new("".to_string(), None);
         assert!(pk.unwrap().is_none())
     }
 }
