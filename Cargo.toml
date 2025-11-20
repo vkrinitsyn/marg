@@ -9,6 +9,8 @@ homepage = "https://github.com/vkrinitsyn/marg.git"
 repository = "https://github.com/vkrinitsyn/marg.git"
 [dependencies]
 uuid = { version = "^1", features = ["v4"] }
+base64 = "0.22.1"
+rand = { version = "0.10.0-rc.5" , optional = true}
 
 [features]
 # at least one db feature is better to set
@@ -27,4 +29,5 @@ key = []
 # if key set in env, the key will be kleanup after read
 keep_env_secret = []
 
-## cargo test --features token
+# support secret generation to have rand optional
+gen_secret = ["rand"]
