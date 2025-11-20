@@ -1,5 +1,8 @@
 use marg::ArgConfig;
 
-fn main() {
-    let _test_run = ArgConfig::from_args();
+fn main() -> Result<(), String> {
+    let cfg = ArgConfig::from_args()?;
+    debug_assert!(cfg.secret.is_some());
+
+    Ok(())
 }

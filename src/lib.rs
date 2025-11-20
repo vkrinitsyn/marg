@@ -119,9 +119,10 @@ impl ArgConfig {
         let mut pk: Option<String>  = None;
         let mut secret: Option<String>  = None;
         let mut uuid: Option<Uuid> = None;
-        let mut ignore_next = true;
+        let mut ignore_next = false;
         for i in 1..input.len() {
             if ignore_next {continue}
+            ignore_next = false;
             if input[i].starts_with("--") {
                 if i < input.len() - 1 {
                     let v = &input[i].as_str()[2..];
