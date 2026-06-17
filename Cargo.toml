@@ -1,6 +1,6 @@
 [package]
 name = "marg"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 authors = ["Vladimir Krinitsyn <v.krinitsyn@gmail.com>"]
 license = "MIT"
@@ -9,8 +9,8 @@ homepage = "https://github.com/vkrinitsyn/marg.git"
 repository = "https://github.com/vkrinitsyn/marg.git"
 [dependencies]
 uuid = { version = "^1", features = ["v4"] }
-base64 = "0.22.1"
-rand = { version = "0.10.0-rc.5" , optional = true}
+base64 = "^0.22"
+rand = { version = "^0.10" , optional = true}
 
 [features]
 # at least one db feature is better to set
