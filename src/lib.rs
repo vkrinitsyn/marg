@@ -1,6 +1,7 @@
 mod feature;
 pub mod token;
 pub mod key;
+pub mod opts;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -9,6 +10,7 @@ use std::path::Path;
 use uuid::Uuid;
 use crate::feature::{featured, SupportedDb};
 use crate::key::KeyFile;
+use crate::opts::Opt;
 
 const CMD_FILE: &str = "file";
 const CMD_DB: &str = "db";
@@ -74,7 +76,7 @@ pub struct ArgConfig {
     /// database connection string
     pub db_url: String,
 
-    /// Format: schema.table  
+    /// Format: schema.table
     pub table: String,
     /// key=value loaded from file if present
     pub cfg: HashMap<String, String>,
@@ -85,6 +87,12 @@ pub struct ArgConfig {
     /// cipher secret for AES taken from env \[SECRET\] OR cml --secret
     /// use keep_env_secret feature to not remove from env
     pub secret: Option<String>,
+    /// -v / --verbose / --debug
+    pub verbose: Opt,
+    /// -q / --quiet / --batch
+    pub quiet: Opt,
+    /// -h / --help / --info
+    pub help: Opt,
 }
 
 
@@ -106,6 +114,13 @@ impl ArgConfig {
         };
         let input: Vec<String> = std::env::args_os().map(|e| e.to_string_lossy().to_string()).collect();
 
+        for arg in input.iter().skip(1) {
+            if arg == "--version" || arg == "-V" {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+        }
+
         ArgConfig::new(input, f, user, pwd)
     }
 
@@ -121,9 +136,15 @@ impl ArgConfig {
         let mut secret: Option<String>  = None;
         let mut uuid: Option<Uuid> = None;
         let mut ignore_next = false;
+        let mut verbose = Opt::new("verbose", "debug", "v", "false");
+        let mut quiet = Opt::new("quiet", "batch", "q", "false");
+        let mut help = Opt::new("help", "info", "h", "false");
         for i in 1..input.len() {
             if ignore_next { ignore_next = false; continue }
             ignore_next = false;
+            if verbose.apply(&input[i]) | quiet.apply(&input[i]) | help.apply(&input[i]) {
+                continue;
+            }
             if input[i].starts_with("--") {
                 if i < input.len() - 1 {
                     let v = &input[i].as_str()[2..];
@@ -161,7 +182,7 @@ impl ArgConfig {
         }
         // first was a check by tag names, then try to guess
         for i in &input {
-            if i.starts_with("--") {
+            if i.starts_with("-") {
                 continue
             }
             // first - trying to detect db url
@@ -197,8 +218,8 @@ impl ArgConfig {
         if let Some(a) = std::env::var_os(CMD_SECRET.to_uppercase()).map(|v| v) {
             secret = Some(a.to_str().map(|v| v.to_string()).unwrap_or("".to_string()));
             #[cfg(not(feature="keep_env_secret"))]
-            unsafe { 
-                std::env::remove_var(CMD_SECRET); 
+            unsafe {
+                std::env::remove_var(CMD_SECRET);
             }
         }
 
@@ -218,6 +239,9 @@ impl ArgConfig {
             )?,
             cfg,
             secret,
+            verbose,
+            quiet,
+            help,
         })
     }
 
@@ -293,270 +317,5 @@ fn load(file: &str, cfg: &mut HashMap<String, String>) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(warnings)]
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use uuid::Uuid;
-
-
-    #[test]
-    #[cfg(unix)]
-    fn test_file_name() {
-        assert_eq!(get_exec_name("","").as_str(), "");
-        assert_eq!(get_exec_name("","target/debug/marg").as_str(), "marg");
-        assert_eq!(get_exec_name("","marg").as_str(), "marg");
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_file_name() {
-        assert_eq!(get_exec_name("","").as_str(), "");
-        assert_eq!(get_exec_name("","target\\debug\\marg.exe").as_str(), "marg");
-        assert_eq!(get_exec_name("","target\\\\debug\\\\marg.exe").as_str(), "marg");
-    }
-
-    #[test]
-    fn config_args_file1_test() {
-        //
-        let cfg = ArgConfig::new(
-            vec!["".to_string()],
-                 SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(0, cfg.cfg.len());
-
-    }
-
-    #[test]
-    fn config_args_file2_test() {
-        let url =  "postgresql://user:pwd@host/db".to_string();
-        let cfg = ArgConfig::new(
-            vec![url.clone()],
-                 SupportedDb::Postgres, "vk".to_string(), None).unwrap();
-        assert_eq!(url, cfg.db_url());
-    }
-
-    #[test]
-    fn config_args_file3_test() {
-        let url =  "postgresql://user:pwd@host/db".to_string();
-        let t = "public.table".to_string();
-        let cfg = ArgConfig::new(
-            vec![url.clone(), t.clone()],
-                 SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(url, cfg.db_url());
-        assert_eq!(t, cfg.table);
-    }
-
-    #[test]
-    fn config_args_user_test() {
-        let user = match std::env::var_os("USER") {
-            Some(a) => a.to_str().unwrap_or("postgres").to_string(),
-            _ => "postgres".to_string(),
-        };
-
-        assert_eq!(format!("postgresql://{}:pwd@host/db", user), link_db_user("postgresql://$USER:pwd@host/db".to_string(), user.clone()));
-        assert_eq!(format!("postgresql://{}:$PWD@host/db", user), link_db_user("postgresql://$USER:$PWD@host/db".to_string(), user.clone()));
-        assert_eq!(format!("postgresql://{}@host/db", user), link_db_user("postgresql://$USER@host/db".to_string(), user.clone()));
-        assert_eq!(format!("postgresql://{}@host/db", ""), link_db_user("postgresql://@host/db".to_string(), user.clone()));
-    }
-
-    // uuid_gen is true when no UUID is provided
-    #[test]
-    fn uuid_gen_autogenerated_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert!(cfg.uuid_gen);
-    }
-
-    // UUID detected positionally from a UUID-formatted string
-    #[test]
-    fn uuid_positional_test() {
-        let id = "550e8400-e29b-41d4-a716-446655440000";
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), id.to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(Uuid::parse_str(id).unwrap(), cfg.uuid);
-        assert!(!cfg.uuid_gen);
-    }
-
-    // --db sets db_url explicitly, overriding positional detection
-    #[test]
-    fn explicit_db_flag_test() {
-        let url = "postgresql://user:pwd@host/db".to_string();
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), "--db".to_string(), url.clone()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(url, cfg.db_url());
-    }
-
-    // --config sets table name explicitly
-    #[test]
-    fn explicit_config_flag_test() {
-        let tbl = "myschema.mytable".to_string();
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), "--config".to_string(), tbl.clone()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(tbl, cfg.table);
-    }
-
-    // --uuid sets uuid and uuid_gen = false
-    #[test]
-    fn explicit_uuid_flag_test() {
-        let id = "550e8400-e29b-41d4-a716-446655440000";
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), "--uuid".to_string(), id.to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(Uuid::parse_str(id).unwrap(), cfg.uuid);
-        assert!(!cfg.uuid_gen);
-    }
-
-    // --token sets token command
-    #[test]
-    fn explicit_token_flag_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), "--token".to_string(), "get-token.sh".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!("get-token.sh", cfg.token.cmd);
-    }
-
-    // --ttl sets token TTL in minutes
-    #[test]
-    fn explicit_ttl_flag_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), "--ttl".to_string(), "30".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(30, cfg.token.min);
-    }
-
-    // --token and --ttl together
-    #[test]
-    fn explicit_token_ttl_combined_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string(),
-                 "--token".to_string(), "get-token.sh".to_string(),
-                 "--ttl".to_string(), "15".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!("get-token.sh", cfg.token.cmd);
-        assert_eq!(15, cfg.token.min);
-    }
-
-    // --secret stores the AES cipher secret
-    #[test]
-    fn explicit_secret_flag_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string(), "--secret".to_string(), "mysecret".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(Some("mysecret".to_string()), cfg.secret);
-    }
-
-    // token detected positionally as third unmatched arg (after db and table)
-    #[test]
-    fn positional_token_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string(),
-                 "postgresql://host/db".to_string(),
-                 "myschema.table".to_string(),
-                 "mytoken".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!("mytoken", cfg.token.cmd);
-    }
-
-    // TTL detected positionally as numeric string once token slot is filled
-    #[test]
-    fn positional_ttl_test() {
-        let cfg = ArgConfig::new(
-            vec!["".to_string(),
-                 "postgresql://host/db".to_string(),
-                 "myschema.table".to_string(),
-                 "mytoken".to_string(),
-                 "45".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!("mytoken", cfg.token.cmd);
-        assert_eq!(45, cfg.token.min);
-    }
-
-    // db_url() resolves $PWD placeholder with the active token value
-    #[test]
-    fn db_url_pwd_substitution_test() {
-        let url = "postgresql://user:$PWD@host/db".to_string();
-        let cfg = ArgConfig::new(
-            vec![url.clone()],
-            SupportedDb::Postgres, "".to_string(), Some("secret123".to_string())).unwrap();
-        assert_eq!("postgresql://user:secret123@host/db", cfg.db_url());
-    }
-
-    // db_url() returns URL unchanged when no $PWD placeholder is present
-    #[test]
-    fn db_url_no_pwd_placeholder_test() {
-        let url = "postgresql://user:pwd@host/db".to_string();
-        let cfg = ArgConfig::new(
-            vec![url.clone()],
-            SupportedDb::Postgres, "".to_string(), Some("secret123".to_string())).unwrap();
-        assert_eq!(url, cfg.db_url());
-    }
-
-    // all five slots filled by positional detection in documented order
-    #[test]
-    fn all_positional_test() {
-        let id = "550e8400-e29b-41d4-a716-446655440000";
-        let cfg = ArgConfig::new(
-            vec!["".to_string(),
-                 "postgresql://host/db".to_string(),
-                 "myschema.table".to_string(),
-                 id.to_string(),
-                 "mytoken".to_string(),
-                 "20".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!("postgresql://host/db", cfg.db_url);
-        assert_eq!("myschema.table", cfg.table);
-        assert_eq!(Uuid::parse_str(id).unwrap(), cfg.uuid);
-        assert!(!cfg.uuid_gen);
-        assert_eq!("mytoken", cfg.token.cmd);
-        assert_eq!(20, cfg.token.min);
-    }
-
-    // all supported flags set explicitly
-    #[test]
-    fn all_explicit_flags_test() {
-        let url = "postgresql://user:pwd@host/db".to_string();
-        let tbl = "myschema.mytable".to_string();
-        let id  = "550e8400-e29b-41d4-a716-446655440000";
-        let cfg = ArgConfig::new(
-            vec!["".to_string(),
-                 "--db".to_string(),     url.clone(),
-                 "--config".to_string(), tbl.clone(),
-                 "--uuid".to_string(),   id.to_string(),
-                 "--token".to_string(),  "get-token.sh".to_string(),
-                 "--ttl".to_string(),    "15".to_string(),
-                 "--secret".to_string(), "mysecret".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!(url, cfg.db_url);
-        assert_eq!(tbl, cfg.table);
-        assert_eq!(Uuid::parse_str(id).unwrap(), cfg.uuid);
-        assert!(!cfg.uuid_gen);
-        assert_eq!("get-token.sh", cfg.token.cmd);
-        assert_eq!(15, cfg.token.min);
-        assert_eq!(Some("mysecret".to_string()), cfg.secret);
-    }
-
-    // SupportedDb::Custom accepts any string as a valid db URL
-    #[test]
-    fn custom_db_any_url_test() {
-        let url = "somedb://connection-string".to_string();
-        let cfg = ArgConfig::new(
-            vec![url.clone()],
-            SupportedDb::Custom, "".to_string(), None).unwrap();
-        assert_eq!(url, cfg.db_url);
-    }
-
-    // default table name derives from executable name (input[0])
-    #[test]
-    fn default_table_from_appname_test() {
-        let cfg = ArgConfig::new(
-            vec!["myapp".to_string()],
-            SupportedDb::Postgres, "".to_string(), None).unwrap();
-        assert_eq!("public.myapp", cfg.table);
-    }
-
-
-}
+mod tests;

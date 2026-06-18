@@ -16,6 +16,19 @@ Parses app startup arguments into a structured config.
 2. environment variables
 3. config file.
 
+### Flags
+
+Boolean flags that control runtime behaviour. Check `cfg.verbose.is_set()` etc. in your application.
+
+| Flag | Aliases | Description                                                  |
+|------|---------|--------------------------------------------------------------|
+| `-v` | `--verbose`, `--debug` | Enable verbose output                                        |
+| `-q` | `--quiet`, `--batch` | Suppress non-essential output or focus on non-interractive   |
+| `-h` | `--help`, `--info` | Caller should print help                                     |
+| `-V` | `--version` | Prints `<name> <version>` and exits (handled by `from_args`) |
+
+Flags also accept explicit values: `--verbose=true` / `--verbose=false`.
+
 ### Arguments
 
 Arguments can be passed positionally (auto-detected by format) or with explicit `--flag value` prefixes:
@@ -55,14 +68,18 @@ pk: /path/to/private.key
 
 ```rust
 pub struct ArgConfig {
-    pub uuid: Uuid,         // instance ID (auto-generated if not provided)
-    pub uuid_gen: bool,     // true if uuid was auto-generated
-    pub db_url: String,     // database connection string
-    pub table: String,      // schema.table for config lookup
+    pub uuid: Uuid,              // instance ID (auto-generated if not provided)
+    pub uuid_gen: bool,          // true if uuid was auto-generated
+    pub db_url: String,          // database connection string
+    pub table: String,           // schema.table for config lookup
     pub cfg: HashMap<String, String>, // key=value pairs from config file
-    pub token: Token,       // token script + TTL for dynamic DB passwords
-    pub pk: Option<KeyFile>,// RSA/AES private key file
-    pub secret: Option<String>, // AES cipher secret
+    pub token: Token,            // token script + TTL for dynamic DB passwords
+    pub pk: Option<KeyFile>,     // RSA/AES private key file
+    pub secret: Option<String>,  // AES cipher secret
+    pub verbose: Opt,            // -v / --verbose / --debug
+    pub quiet: Opt,              // -q / --quiet / --batch
+    pub help: Opt,               // -h / --help / --info
+    // -V / --version: prints version and exits inside from_args()
 }
 ```
 
@@ -70,6 +87,14 @@ pub struct ArgConfig {
 
 ```rust
 let config = ArgConfig::from_args()?;
+
+// -V / --version is handled inside from_args() — prints and exits automatically
+
+if config.help.is_set() {
+    println!("Usage: myapp [OPTIONS] [db-url] [schema.table] [uuid] [token] [ttl]");
+    return Ok(());
+}
+
 let url = config.db_url(); // resolves $PWD placeholder with token value
 ```
 
