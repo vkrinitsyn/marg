@@ -98,7 +98,17 @@ pub struct ArgConfig {
 
 impl ArgConfig {
 
+    /// backward compatibility but not correct info!
+    /// Use: ArgConfig::from_args2(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
     pub fn from_args() -> Result<ArgConfig, String> {
+        ArgConfig::from_args2(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    }
+    /// `app_name` / `app_version` should be the *caller's* crate identity, e.g.
+    /// `ArgConfig::from_args(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))`.
+    /// They can't default to marg's own `env!()` here since that macro resolves
+    /// at compile time against whichever crate the source lives in (marg itself),
+    /// not against whatever binary ends up calling this function.
+    pub fn from_args2(app_name: &str, app_version: &str) -> Result<ArgConfig, String> {
         let user = match std::env::var_os("USER") {
             Some(a) => a.to_str().unwrap_or("postgres").to_string(),
             _ => "postgres".to_string(),
@@ -116,7 +126,7 @@ impl ArgConfig {
 
         for arg in input.iter().skip(1) {
             if arg == "--version" || arg == "-V" {
-                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                println!("{app_name} {app_version}");
                 std::process::exit(0);
             }
         }

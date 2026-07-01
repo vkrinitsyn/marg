@@ -86,9 +86,10 @@ pub struct ArgConfig {
 ### Usage
 
 ```rust
-let config = ArgConfig::from_args()?;
+let config = ArgConfig::from_args2(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))?;
 
-// -V / --version is handled inside from_args() — prints and exits automatically
+// -V / --version is handled inside from_args() — prints "<name> <version>" and exits automatically
+// pass your own crate's name/version, since env!() inside marg would resolve to marg's own
 
 if config.help.is_set() {
     println!("Usage: myapp [OPTIONS] [db-url] [schema.table] [uuid] [token] [ttl]");

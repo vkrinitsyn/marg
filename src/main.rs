@@ -15,7 +15,7 @@ fn random_32_bytes_vec() -> Vec<u8> {
 }
 
 fn main() -> Result<(), String> {
-    let cfg = ArgConfig::from_args()?;
+    let cfg = ArgConfig::from_args2(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))?;
 
     if cfg.secret.is_none() {
         let bytes = random_32_bytes_vec();
