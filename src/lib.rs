@@ -31,7 +31,8 @@ const CMD_UUID: &str = "uuid";
 ///
 /// - config table name in format: schema.table, usually the second arg trying to identify with a dot in the middle.
 ///   - or prefix with: '--config '
-///     (optional, default public.{the_appname})
+///     (optional, default public.{the_appname}; if the binary file name contains '-' or '_',
+///     only the first portion before it is used, e.g. `marg-server` -> `public.marg`)
 ///
 /// - UUID this app instance to use as a node id or config recognition. trying to auto identify a UUID formatted string.
 ///   - or prefix with '--uuid '
@@ -298,6 +299,9 @@ fn get_exec_name(schema: &str, input: &str) -> String {
     } else {
         name
     };
+    // config table name is derived from the binary name; if it contains '-' or '_'
+    // (e.g. version/platform suffixes in the executable file name), take the first portion
+    let name = name.split(['-', '_']).next().unwrap_or("").to_string();
     format!("{}{}", schema, name)
 }
 

@@ -36,7 +36,7 @@ Arguments can be passed positionally (auto-detected by format) or with explicit 
 | Flag | Positional detection | Description | Default |
 |------|----------------------|-------------|---------|
 | `--db` | URL prefix (e.g. `postgres://`) | Database connection URL | `postgres://` with current `$USER` |
-| `--config` | `schema.table` format (contains `.`) | Config table name | `public.<appname>` |
+| `--config` | `schema.table` format (contains `.`) | Config table name | `public.<appname>` (binary name truncated at the first `-` or `_`, e.g. `marg-server` → `public.marg`) |
 | `--uuid` | UUID-formatted string | Node/instance ID | Auto-generated (see `uuid_gen`) |
 | `--token` | 3rd unmatched arg | Script name to acquire DB password | _(none)_ |
 | `--ttl` | Numeric string | Token lifetime in minutes | `1` |

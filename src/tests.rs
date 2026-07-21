@@ -25,6 +25,9 @@ fn test_file_name() {
     assert_eq!(get_exec_name("", "").as_str(), "");
     assert_eq!(get_exec_name("", "target/debug/marg").as_str(), "marg");
     assert_eq!(get_exec_name("", "marg").as_str(), "marg");
+    assert_eq!(get_exec_name("", "target/debug/marg-server").as_str(), "marg");
+    assert_eq!(get_exec_name("", "target/debug/marg_server").as_str(), "marg");
+    assert_eq!(get_exec_name("public.", "my-app-1.2.3").as_str(), "public.my");
 }
 
 #[test]
@@ -33,6 +36,9 @@ fn test_file_name() {
     assert_eq!(get_exec_name("", "").as_str(), "");
     assert_eq!(get_exec_name("", "target\\debug\\marg.exe").as_str(), "marg");
     assert_eq!(get_exec_name("", "target\\\\debug\\\\marg.exe").as_str(), "marg");
+    assert_eq!(get_exec_name("", "target\\debug\\marg-server.exe").as_str(), "marg");
+    assert_eq!(get_exec_name("", "target\\debug\\marg_server.exe").as_str(), "marg");
+    assert_eq!(get_exec_name("public.", "my-app-1.2.3.exe").as_str(), "public.my");
 }
 
 // ── basic positional / explicit flags ────────────────────────────────────────
