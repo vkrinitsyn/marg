@@ -1,6 +1,6 @@
 [package]
 name = "marg"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 authors = ["Vladimir Krinitsyn <v.krinitsyn@gmail.com>"]
 license = "MIT"
@@ -9,7 +9,7 @@ homepage = "https://github.com/vkrinitsyn/marg.git"
 repository = "https://github.com/vkrinitsyn/marg.git"
 [dependencies]
 uuid = { version = "^1", features = ["v4"] }
-base64 = "^0.22"
+base64 = "^0.23"
 rand = { version = "^0.10" , optional = true}
 
 [features]
@@ -26,7 +26,8 @@ token = []
 # check for key text file, to use for RSA of AES
 key = []
 
-# if key set in env, the key will be kleanup after read
+# keep SECRET in the environment after reading it; without this feature it is taken
+# out (std::env::remove_var - an unsafe call since edition 2024)
 keep_env_secret = []
 
 # support secret generation to have rand optional

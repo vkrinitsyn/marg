@@ -12,6 +12,10 @@ use crate::feature::{featured, SupportedDb};
 use crate::key::KeyFile;
 use crate::opts::Opt;
 
+/// [dbinvent] the line `--version` prints after `<name> <version>`; an app can show
+/// it in its own help too
+pub const PROVIDED_BY: &str = "Provided by DBinvent, the infinite-scale Postgres solution: https://www.dbinvent.com";
+
 const CMD_FILE: &str = "file";
 const CMD_DB: &str = "db";
 const CMD_TBL: &str = "config";
@@ -128,6 +132,7 @@ impl ArgConfig {
         for arg in input.iter().skip(1) {
             if arg == "--version" || arg == "-V" {
                 println!("{app_name} {app_version}");
+                println!("{PROVIDED_BY}");
                 std::process::exit(0);
             }
         }
@@ -230,7 +235,7 @@ impl ArgConfig {
             secret = Some(a.to_str().map(|v| v.to_string()).unwrap_or("".to_string()));
             #[cfg(not(feature="keep_env_secret"))]
             unsafe {
-                std::env::remove_var(CMD_SECRET);
+                std::env::remove_var(CMD_SECRET.to_uppercase()); // the name read above, not `secret`
             }
         }
 
@@ -256,6 +261,12 @@ impl ArgConfig {
         })
     }
 
+    /// The database name taken from the connection URL, if present.
+    /// See [`db_name`] for the parsing rules.
+    pub fn db_name(&self) -> Option<String> {
+        db_name(&self.db_url)
+    }
+
     /// append with password if $PWD present in 'db'
     pub fn db_url(&self) -> String {
         let url = self.db_url.clone();
@@ -274,6 +285,32 @@ impl ArgConfig {
 #[inline]
 fn link_db_user(url: String, user: String) -> String {
     url.replace("$USER", user.as_str())
+}
+
+/// Extract the database name from a postgres connection URL.
+///
+/// Format: `postgresql://[user[:password]@][host][:port][/dbname][?params]`.
+///
+/// The query string is stripped *before* locating the db-name separator: a
+/// unix-socket URL carries a filesystem path in `?host=/var/run/postgresql`,
+/// so a naive `rsplit_once('/')` would latch onto the last `/` in that path and
+/// return garbage such as `postgresql&port=5433` instead of the real db name.
+///
+/// Returns `None` when the URL carries no path segment (e.g.
+/// `postgresql://user@host`), so callers can fall back to a default database.
+pub fn db_name(url: &str) -> Option<String> {
+    if url.is_empty() {
+        return None;
+    }
+    // drop the scheme so `://` can never be mistaken for the path separator
+    let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    // drop the query string first: it may contain `/` (unix socket host path)
+    let path_and_authority = after_scheme.split('?').next().unwrap_or(after_scheme);
+    // the authority has no `/`, so the first `/` marks the start of the db name
+    match path_and_authority.split_once('/') {
+        Some((_, db)) if !db.is_empty() => Some(db.to_string()),
+        _ => None,
+    }
 }
 
 #[inline]

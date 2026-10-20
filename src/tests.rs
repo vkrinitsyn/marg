@@ -298,3 +298,30 @@ fn verbose_and_quiet_together_test() {
     assert!(cfg.quiet.is_set());
 }
 
+#[test]
+fn db_name_test() {
+    // regression: unix-socket URL with a `/`-bearing host= query param
+    assert_eq!(
+        db_name("postgresql://postgres@localhost/postgres?host=/var/run/postgresql&port=5433"),
+        Some("postgres".to_string())
+    );
+    // no TCP host, socket dir in query (the default-shaped url)
+    assert_eq!(
+        db_name("postgresql://nv:pwd@/nv?host=/var/run/postgresql"),
+        Some("nv".to_string())
+    );
+    // plain tcp url
+    assert_eq!(db_name("postgresql://user:pwd@host/db"), Some("db".to_string()));
+    // tcp host with explicit port and query
+    assert_eq!(
+        db_name("postgresql://user@localhost:5432/mydb?sslmode=require"),
+        Some("mydb".to_string())
+    );
+    // no path segment -> None
+    assert_eq!(db_name("postgresql://user@host"), None);
+    assert_eq!(db_name("postgresql://user@host?host=/var/run/postgresql"), None);
+    // trailing slash, empty db name, socket path only in query -> None
+    assert_eq!(db_name("postgresql://user@host/?host=/var/run/postgresql"), None);
+    // empty url -> None
+    assert_eq!(db_name(""), None);
+}

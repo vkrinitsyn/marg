@@ -2,6 +2,10 @@
 Meta config for apps from args
 Use to connect to DB to pull other configs
 
+> [!NOTE]
+Also look at [Schema Guard](https://github.com/vkrinitsyn/schema_guard) , YAML based schema
+management for Postgres - both provided by [DBinvent](https://www.dbinvent.com), the infinite-scale
+Postgres solution.
 
 support external app execution (az acc) for a password (token) acquisition
 
