@@ -1,0 +1,61 @@
+name: ci
+
+# The tests with each feature set, and the line coverage of them all: under 69% fails
+# the run (measured 69.3%; diff-doc-rs holds 90). The coverage goes to Codecov (the
+# README badge) through GitHub's OIDC token - no secret; the repository is enabled
+# once at codecov.io. No database service: marg only parses the URL, never connects.
+on:
+  push:
+    branches-ignore: ["dependabot/**"]   # their pull request runs it
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # a branch's newer push cancels its older run; on main each run stands (the badge):
+  # a cancelled run there shows as failing
+  group: ci-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # default: postgres; no db; sqlite alone; every optional one but token. With
+        # token the tests' token names run as commands ("mytoken": no such file)
+        features:
+          - ""
+          - "--no-default-features"
+          - "--no-default-features --features sqlite"
+          - "--features sqlite,key,keep_env_secret,gen_secret"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test ${{ matrix.features }}
+
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Codecov's OIDC upload
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # token has no test run (above): it still has to build
+      - run: cargo check --all-features --all-targets
+      - run: cargo llvm-cov --features sqlite,key,keep_env_secret,gen_secret --lcov --output-path lcov.info --fail-under-lines 69
+      - uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
+          use_oidc: true
+          # a fork's pull request has no token: the gate above holds without the upload
+          fail_ci_if_error: false

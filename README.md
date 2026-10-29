@@ -1,4 +1,12 @@
 # marg
+
+[![ci](https://github.com/vkrinitsyn/marg/actions/workflows/ci.yml/badge.svg)](https://github.com/vkrinitsyn/marg/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/vkrinitsyn/marg/graph/badge.svg)](https://codecov.io/gh/vkrinitsyn/marg)
+[![audit](https://github.com/vkrinitsyn/marg/actions/workflows/audit.yml/badge.svg)](https://github.com/vkrinitsyn/marg/actions/workflows/audit.yml)
+[![crates.io](https://img.shields.io/crates/v/marg.svg)](https://crates.io/crates/marg)
+[![docs.rs](https://docs.rs/marg/badge.svg)](https://docs.rs/marg)
+[![license](https://img.shields.io/crates/l/marg.svg)](LICENSE)
+
 Meta config for apps from args
 Use to connect to DB to pull other configs
 

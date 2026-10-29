@@ -4,7 +4,8 @@ use marg::ArgConfig;
 #[cfg(feature="gen_secret")]
 fn random_32_bytes_vec() -> Vec<u8> {
     let mut bytes = vec![0u8; 32];
-    let mut rng = rand::RngCore::rng();
+    use rand::Rng; // rand 0.10: the old RngCore, fill_bytes with it
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut bytes);
     bytes
 }

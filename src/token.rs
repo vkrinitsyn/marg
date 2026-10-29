@@ -1,4 +1,6 @@
 use std::time::{Duration, Instant};
+#[cfg(feature="token")]
+use std::process::Command;
 
 /**
 Token is actually a temporary password obtained from another app run
