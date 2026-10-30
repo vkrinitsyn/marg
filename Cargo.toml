@@ -5,11 +5,10 @@ edition = "2024"
 authors = ["Vladimir Krinitsyn <v.krinitsyn@gmail.com>", "support@dbinvent.com"]
 license = "MIT"
 description = "Meta config for apps from args"
-homepage = "https://github.com/vkrinitsyn/marg.git"
+homepage = "https://vkrinitsyn.github.io/"
 repository = "https://github.com/vkrinitsyn/marg.git"
 documentation = "https://github.com/vkrinitsyn/marg.git"
 keywords = ["arg"]
-links = "https://dbinvent.com/"
 
 [dependencies]
 uuid = { version = "^1", features = ["v4"] }
