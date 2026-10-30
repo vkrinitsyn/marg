@@ -1,0 +1,7 @@
+marg - meta config for apps from args: the database connection and the secrets an
+app needs to pull the rest of its config.
+
+Copyright (c) 2024-2026 Vladimir Krinitsyn, DBinvent
+
+Licensed under the MIT license: see LICENSE. The crates it is built with keep their
+own licenses, as Cargo.lock lists them.
