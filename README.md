@@ -1,7 +1,7 @@
 # marg
 
 [![ci](https://github.com/vkrinitsyn/marg/actions/workflows/ci.yml/badge.svg)](https://github.com/vkrinitsyn/marg/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/vkrinitsyn/marg/graph/badge.svg)](https://codecov.io/gh/vkrinitsyn/marg)
+[![coverage](https://raw.githubusercontent.com/vkrinitsyn/marg/badges/coverage.svg?sanitize=true)](https://github.com/vkrinitsyn/marg/actions/workflows/ci.yml)
 [![audit](https://github.com/vkrinitsyn/marg/actions/workflows/audit.yml/badge.svg)](https://github.com/vkrinitsyn/marg/actions/workflows/audit.yml)
 [![crates.io](https://img.shields.io/crates/v/marg.svg)](https://crates.io/crates/marg)
 [![docs.rs](https://docs.rs/marg/badge.svg)](https://docs.rs/marg)
