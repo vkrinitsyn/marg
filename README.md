@@ -10,6 +10,28 @@
 Meta config for apps from args
 Use to connect to DB to pull other configs
 
+## The idea
+
+An app built on marg starts in three steps, and marg is the first:
+
+1. **The minimum, to reach the database.** The command line - or a file, or the
+   environment - carries only what connecting needs: the URL, the config table, the
+   instance id, the secret. Nothing about what the app does.
+2. **Everything else from the database.** Once connected, the app reads its settings from
+   its config table. They change at run time, are shared by every instance that reads the
+   same table, and are replicated with the data where the database is - a dynamic,
+   flexible configuration instead of a static file per host.
+3. **As simple as possible to start.** Every parameter is optional and guessed: a URL by
+   its `postgres://` prefix, a table by its `schema.table` form, an id by its UUID form, in
+   any order. With none given, the defaults - the local socket as `$USER`, the table named
+   after the binary - are enough to start.
+
+YT Cluster's `ytserv` and `ytctl` both start this way. A node's service runs `ytserv` with
+two arguments - the socket URL and the config table:
+`ytserv 'postgresql://postgres@/app?host=/var/run/postgresql&port=5432' public.yt_config` -
+and reads everything else from that table; `ytctl` alone opens its dashboard with every
+default ([how the apps start](https://docs.dbinvent.com/yt/guide/app-start)).
+
 > [!NOTE]
 > Also look at [Schema Guard](https://github.com/vkrinitsyn/schema_guard) , YAML based schema
 > management for Postgres - both provided by [DBinvent](https://www.dbinvent.com), the infinite-scale
@@ -24,7 +46,7 @@ Parses app startup arguments into a structured config.
 ### Priority order:
 1. command-line args: 
    1. prefixed with --name
-   2. positional or heuristic 
+   2. positional or heuristic detection
 2. environment variables
 3. config file.
 
@@ -45,10 +67,10 @@ Flags also accept explicit values: `--verbose=true` / `--verbose=false`.
 
 Arguments can be passed positionally (auto-detected by format) or with explicit `--flag value` prefixes:
 
-| Flag | Positional detection | Description | Default |
+| Flag | Positional Or Detection | Description | Default |
 |------|----------------------|-------------|---------|
 | `--db` | URL prefix (e.g. `postgres://`) | Database connection URL | `postgres://` with current `$USER` |
-| `--config` | `schema.table` format (contains `.`) | Config table name | `public.<appname>` (binary name truncated at the first `-` or `_`, e.g. `marg-server` → `public.marg`) |
+| `--config` | `schema.table` format (contains `.`) | Config table name | `public.<appname>`* |
 | `--uuid` | UUID-formatted string | Node/instance ID | Auto-generated (see `uuid_gen`) |
 | `--token` | 3rd unmatched arg | Script name to acquire DB password | _(none)_ |
 | `--ttl` | Numeric string | Token lifetime in minutes | `1` |
@@ -56,12 +78,14 @@ Arguments can be passed positionally (auto-detected by format) or with explicit 
 | `--secret` | _(explicit only)_ | AES cipher secret (prefer env `SECRET`) | _(none)_ |
 | `--file` | _(explicit only)_ | Config file to load key=value pairs from | _(none)_ |
 
+> *binary name truncated at the first `-` or `_`, e.g. `marg-server` → `public.marg`
+
 ### Environment Variables
 
-- `PGPASSWORD` — PostgreSQL password (used to connect to DB)
-- `PASSPHRASE` — Passphrase for RSA private key
-- `SECRET` — AES cipher secret; removed from env after reading (unless compiled with `keep_env_secret` feature)
-- `$USER` — Substituted into DB URL where `$USER` appears
+- `PGPASSWORD` - PostgreSQL password (used to connect to DB)
+- `PASSPHRASE` - Passphrase for RSA private key
+- `SECRET` - AES cipher secret; removed from env after reading (unless compiled with `keep_env_secret` feature)
+- `$USER` - Substituted into DB URL where `$USER` appears
 
 ### Config File Format
 
@@ -100,7 +124,7 @@ pub struct ArgConfig {
 ```rust
 let config = ArgConfig::from_args2(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))?;
 
-// -V / --version is handled inside from_args() — prints "<name> <version>" and exits automatically
+// -V / --version is handled inside from_args() - prints "<name> <version>" and exits automatically
 // pass your own crate's name/version, since env!() inside marg would resolve to marg's own
 
 if config.help.is_set() {
