@@ -18,15 +18,16 @@ fn random_32_bytes_vec() -> Vec<u8> {
 fn main() -> Result<(), String> {
     let cfg = ArgConfig::from_args2(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))?;
 
-    if cfg.secret.is_none() {
+    if let Some(secret) = &cfg.secret {
+        let bytes = base64::prelude::BASE64_STANDARD.decode(secret)
+            .map_err(|e| format!("the secret is not base64: {e}"))?;
+
+        println!("Parsed:    {} [{}]", secret, bytes.len());
+    } else {
         let bytes = random_32_bytes_vec();
         let secret = base64::prelude::BASE64_STANDARD.encode(&bytes);
 
         println!("Generated: {secret} [{}]", bytes.len());
-    } else {
-        let bytes = base64::prelude::BASE64_STANDARD.decode(cfg.secret.as_ref().unwrap()).unwrap();
-
-        println!("Parsed:    {} [{}]", cfg.secret.unwrap(), bytes.len());
     }
     Ok(())
 }

@@ -44,12 +44,12 @@ impl SupportedDb {
         }
     }
 
-    pub(crate) fn default_url(&self, user: &String) -> String {
+    pub(crate) fn default_url(&self, user: &str) -> String {
         match &self {
             SupportedDb::Postgres => {
                 let url = SupportedDb::DEFAULT_PG_URL.to_string();
-                if user.len() > 0 && url.contains("$USER") {
-                    url.replace("$USER", user.as_str())
+                if !user.is_empty() && url.contains("$USER") {
+                    url.replace("$USER", user)
                 } else {
                     url
                 }

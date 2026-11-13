@@ -74,11 +74,21 @@ Arguments can be passed positionally (auto-detected by format) or with explicit 
 | `--uuid` | UUID-formatted string | Node/instance ID | Auto-generated (see `uuid_gen`) |
 | `--token` | 3rd unmatched arg | Script name to acquire DB password | _(none)_ |
 | `--ttl` | Numeric string | Token lifetime in minutes | `1` |
-| `--key` | _(explicit only)_ | RSA/AES private key file path (feature `rsa`) | _(none)_ |
+| `--key` | _(explicit only)_ | RSA/AES private key file path (feature `key`) | _(none)_ |
 | `--secret` | _(explicit only)_ | AES cipher secret (prefer env `SECRET`) | _(none)_ |
 | `--file` | _(explicit only)_ | Config file to load key=value pairs from | _(none)_ |
 
 > *binary name truncated at the first `-` or `_`, e.g. `marg-server` → `public.marg`
+
+The first arg (the app itself) and each flag's value are never guessed as another argument.
+
+Errors, not silent defaults: a value flag at the end, with an empty value or with another
+`--flag` after it (`--db --ttl 15`); a uuid that is not one (flag, env or file); with
+feature `key`, a key file that is not a key (from `--key`, env or the config file).
+
+The token script runs in a shell (`sh -c`, `cmd /C` on Windows), so quotes and pipes work
+(`az account get-access-token ... | jq -r .accessToken`); the line end of its output is
+not part of the password.
 
 ### Environment Variables
 

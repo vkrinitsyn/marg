@@ -47,11 +47,11 @@ const CMD_UUID: &str = "uuid";
 /// - token live in minutes, usually the forth arg (required feature 'token')
 ///   - or prefix with '--ttl '
 ///
-/// - (Private) Key text file name to use with RSA OR AES encryption (required feature 'rsa')
+/// - (Private) Key text file name to use with RSA OR AES encryption (required feature 'key')
 ///   - or prefix with '--key '
 ///
 /// - cipher secret for AES taken from env \[SECRET\] (more secure) OR cml --secret (not recommended)
-///  <br>Also: compile with keep_env_secret feature to not remove from env
+///   <br>Also: compile with keep_env_secret feature to not remove from env
 ///
 /// Alternative configuration:
 /// - file name, usually the first arg
@@ -66,6 +66,10 @@ const CMD_UUID: &str = "uuid";
 ///  - pk: OR pk=
 ///
 /// params passed in cmd line override params loaded from file & env.
+///
+/// Errors: a value flag (--file, --db, --config, --token, --ttl, --key, --uuid, --secret)
+/// with no value, an empty one or another flag after it; a uuid that is not one; with
+/// feature 'key' a key file (--key, env or file) that is not a key.
 ///
 /// env:
 /// - PGPASSWORD, in case of postgres db url, use to connect to the DB
@@ -120,7 +124,7 @@ impl ArgConfig {
         };
         let f = featured();
         let pwd = if !f.env_pwd().is_empty() {
-            match std::env::var_os(f.env_pwd().as_str()).map(|v| v) {
+            match std::env::var_os(f.env_pwd().as_str()) {
                 Some(a) => a.to_str().map(|v| v.to_string()),
                 _ => None,
             }
@@ -152,53 +156,48 @@ impl ArgConfig {
         let mut secret: Option<String>  = None;
         let mut uuid: Option<Uuid> = None;
         let mut ignore_next = false;
+        // what the guess below skips: input[0], the app itself, and each flag's value
+        let mut taken = vec![false; input.len()];
+        if let Some(t) = taken.first_mut() { *t = true; }
         let mut verbose = Opt::new("verbose", "debug", "v", "false");
         let mut quiet = Opt::new("quiet", "batch", "q", "false");
         let mut help = Opt::new("help", "info", "h", "false");
         for i in 1..input.len() {
             if ignore_next { ignore_next = false; continue }
-            ignore_next = false;
             if verbose.apply(&input[i]) | quiet.apply(&input[i]) | help.apply(&input[i]) {
                 continue;
             }
-            if input[i].starts_with("--") {
-                if i < input.len() - 1 {
-                    let v = &input[i].as_str()[2..];
-                    if v == CMD_FILE {
-                        let _ = load(v, &mut cfg)?;
-                        ignore_next = true;
-                    } else if v == CMD_DB {
-                        db = Some(input[i + 1].to_string());
-                        ignore_next = true;
-                    } else if v == CMD_TBL {
-                        tbl = Some(input[i + 1].to_string());
-                        ignore_next = true;
-                    } else if v == CMD_TOKEN {
-                        token = Some(input[i + 1].to_string());
-                        ignore_next = true;
-                    } else if v == CMD_TTL {
-                        ttl = Some(input[i + 1].to_string());
-                        ignore_next = true;
-                    } else if v == CMD_KEY {
-                        let file = input[i + 1].to_string();
-                        if key::is_key_file(&file) {
-                            pk = Some(file);
-                            ignore_next = true;
-                        }
-                    } else if v == CMD_UUID {
-                        uuid = Uuid::parse_str(input[i + 1].as_str()).ok();
-                        ignore_next = true;
-                    } else if v == CMD_SECRET {
-                        secret = Some(input[i + 1].to_string());
-                        ignore_next = true;
-                    }
-                }
-            } else {
+            // not one of ours (the app's own flag) or not a flag: left to the guess below
+            let Some(v) = input[i].strip_prefix("--") else { continue };
+            if ![CMD_FILE, CMD_DB, CMD_TBL, CMD_TOKEN, CMD_TTL, CMD_KEY, CMD_UUID, CMD_SECRET].contains(&v) {
+                continue;
+            }
+            // the next arg is the value: none, an empty one or another flag is an error
+            let value = match input.get(i + 1) {
+                Some(x) if !x.is_empty() && !x.starts_with("--") => x.to_string(),
+                _ => return Err(format!("--{v} needs a value")),
+            };
+            taken[i + 1] = true;
+            ignore_next = true;
+            match v {
+                // the file named after it: `--file <path>` (before 0.4.6 a file named "file")
+                CMD_FILE => load(&value, &mut cfg)?,
+                CMD_DB => db = Some(value),
+                CMD_TBL => tbl = Some(value),
+                CMD_TOKEN => token = Some(value),
+                CMD_TTL => ttl = Some(value),
+                // checked as a key file by KeyFile::new, the same as one from env or a file
+                CMD_KEY => pk = Some(value),
+                CMD_UUID => uuid = Some(parse_uuid(&value)?),
+                _ => secret = Some(value), // CMD_SECRET
             }
         }
         // first was a check by tag names, then try to guess
-        for i in &input {
-            if i.starts_with("-") {
+        for (n, i) in input.iter().enumerate() {
+            if taken[n] || i.starts_with("-") {
+                continue
+            }
+            if i.is_empty() {
                 continue
             }
             // first - trying to detect db url
@@ -228,11 +227,17 @@ impl ArgConfig {
             }
         }
         if uuid.is_none() {
-            uuid  = Uuid::parse_str(get_env_or_cfg(CMD_UUID, &cfg, "").as_str()).ok();
+            let u = get_env_or_cfg(CMD_UUID, &cfg, "");
+            if !u.is_empty() {
+                uuid = Some(parse_uuid(&u)?);
+            }
         }
 
-        if let Some(a) = std::env::var_os(CMD_SECRET.to_uppercase()).map(|v| v) {
-            secret = Some(a.to_str().map(|v| v.to_string()).unwrap_or("".to_string()));
+        if let Some(a) = std::env::var_os(CMD_SECRET.to_uppercase()) {
+            // the command line wins (--secret); SECRET leaves the env either way
+            if secret.is_none() {
+                secret = Some(a.to_str().map(|v| v.to_string()).unwrap_or("".to_string()));
+            }
             #[cfg(not(feature="keep_env_secret"))]
             unsafe {
                 std::env::remove_var(CMD_SECRET.to_uppercase()); // the name read above, not `secret`
@@ -250,7 +255,7 @@ impl ArgConfig {
                 pwd
             )?,
             pk: KeyFile::new(
-                pk.unwrap_or(get_env_or_cfg(CMD_KEY, &cfg, &"")),
+                pk.unwrap_or(get_env_or_cfg(CMD_KEY, &cfg, "")),
                 std::env::var_os(CMD_PASS).map(|p| p.to_string_lossy().to_string()),
             )?,
             cfg,
@@ -270,16 +275,21 @@ impl ArgConfig {
     /// append with password if $PWD present in 'db'
     pub fn db_url(&self) -> String {
         let url = self.db_url.clone();
-        if let Some(i) = url.find(":$P") {
-            if let Some(y) = url.find("@") {
+        // the password part: ":$P..." up to the '@' after it (an '@' before it is not the end)
+        if let Some(i) = url.find(":$P")
+            && let Some(y) = url[i..].find('@').map(|y| i + y) {
                 let pwd = url.as_str()[i+1..y].to_owned();
                 return url.replace(
                     pwd.as_str(),
                     self.token.value.clone().unwrap_or("".into()).as_str()).to_string();
             }
-        }
         url
     }
+}
+
+/// a uuid from --uuid, env or the config file: a bad one is an error, not a random id
+fn parse_uuid(value: &str) -> Result<Uuid, String> {
+    Uuid::parse_str(value).map_err(|e| format!("uuid [{value}] {e}"))
 }
 
 #[inline]
@@ -315,7 +325,7 @@ pub fn db_name(url: &str) -> Option<String> {
 
 #[inline]
 fn get_env_or_cfg(input: &str, cfg: &HashMap<String, String>, def: &str) -> String {
-    match std::env::var_os(input).map(|v| v) {
+    match std::env::var_os(input) {
         Some(a) => a.to_str().map(|v| v.to_string()).unwrap_or(def.to_string()),
         None => cfg.get(input).unwrap_or(&def.to_string()).into()
     }
@@ -355,15 +365,13 @@ fn load(file: &str, cfg: &mut HashMap<String, String>) -> Result<(), String> {
     let f = File::open(file).map_err(|e| e.to_string())?;
     let reader = BufReader::new(f);
     for line in reader.lines() {
-        if let Ok(l) = line {
-            if let Some(i) = l.chars().position(|c| c == '=' || c == ':' || c == '#' || c == ';' || c == '/' || c == '[') {
-                if l.as_bytes()[i] != b'#' && l.as_bytes()[i] != b';' && l.as_bytes()[i] != b'/' && l.as_bytes()[i] != b'[' {
+        if let Ok(l) = line
+            && let Some(i) = l.char_indices().find(|(_, c)| matches!(c, '=' | ':' | '#' | ';' | '/' | '[')).map(|(b, _)| b) // a byte index: l[..i]
+                && l.as_bytes()[i] != b'#' && l.as_bytes()[i] != b';' && l.as_bytes()[i] != b'/' && l.as_bytes()[i] != b'[' {
                     let key = l[..i].trim().to_lowercase();
                     let value = l[i + 1..].trim().to_string();
                     cfg.insert(key, value);
                 }
-            }
-        }
     }
     Ok(())
 }

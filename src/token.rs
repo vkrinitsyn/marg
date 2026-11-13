@@ -49,23 +49,32 @@ impl Token {
     #[cfg(feature="token")]
     pub fn refresh(&mut self) -> Result<Duration, String> {
         if self.cmd.is_empty() {
-            return Err("Not configured".to_string());
+            Err("Not configured".to_string())
         } else {
-            let cmd:Vec<&str> = self.cmd.split(" ").collect();
-            let mut c = Command::new(cmd[0]);
-            if cmd.len() > 1 {
-                c.args(&cmd[1..]);
+            // a shell runs it: quotes and pipes work, e.g. `az ... | jq -r .accessToken`
+            // raw: Command::arg would escape quotes as \" and cmd does not take those back
+            #[cfg(windows)]
+            let mut c = Command::new("cmd");
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                c.arg("/C").raw_arg(&self.cmd);
             }
+            #[cfg(not(windows))]
+            let mut c = Command::new("sh");
+            #[cfg(not(windows))]
+            c.arg("-c").arg(&self.cmd);
             match c.output() {
                 Ok(out) => {
                     if out.status.success() {
                         let value = String::from_utf8(out.stdout).map_err(|e| format!("parsing output of {} {}", self.cmd, e))?;
-                        self.value = Some(value);
+                        // the output's line end is not part of the password
+                        self.value = Some(value.trim_end_matches(['\r', '\n']).to_string());
                         self.refreshed = Instant::now();
-                        Ok(self.ttl.clone())
+                        Ok(self.ttl)
                     } else {
                         let value = String::from_utf8(out.stderr).map_err(|e| format!("parsing error of {} {}", self.cmd, e))?;
-                        Err(value)
+                        Err(format!("[{}] {} {}", self.cmd, out.status, value.trim_end()))
                     }
                 }
                 Err(e) => {

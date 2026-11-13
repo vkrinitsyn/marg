@@ -52,7 +52,7 @@ fn config_args_file1_test() {
 #[test]
 fn config_args_file2_test() {
     let url = "postgresql://user:pwd@host/db".to_string();
-    let cfg = ArgConfig::new(vec![url.clone()], SupportedDb::Postgres, "vk".to_string(), None).unwrap();
+    let cfg = ArgConfig::new(vec!["".to_string(), url.clone()], SupportedDb::Postgres, "vk".to_string(), None).unwrap();
     assert_eq!(url, cfg.db_url());
 }
 
@@ -60,7 +60,7 @@ fn config_args_file2_test() {
 fn config_args_file3_test() {
     let url = "postgresql://user:pwd@host/db".to_string();
     let t = "public.table".to_string();
-    let cfg = ArgConfig::new(vec![url.clone(), t.clone()], SupportedDb::Postgres, "".to_string(), None).unwrap();
+    let cfg = ArgConfig::new(vec!["".to_string(), url.clone(), t.clone()], SupportedDb::Postgres, "".to_string(), None).unwrap();
     assert_eq!(url, cfg.db_url());
     assert_eq!(t, cfg.table);
 }
@@ -154,14 +154,14 @@ fn positional_ttl_test() {
 #[test]
 fn db_url_pwd_substitution_test() {
     let url = "postgresql://user:$PWD@host/db".to_string();
-    let cfg = ArgConfig::new(vec![url.clone()], SupportedDb::Postgres, "".to_string(), Some("secret123".to_string())).unwrap();
+    let cfg = ArgConfig::new(vec!["".to_string(), url.clone()], SupportedDb::Postgres, "".to_string(), Some("secret123".to_string())).unwrap();
     assert_eq!("postgresql://user:secret123@host/db", cfg.db_url());
 }
 
 #[test]
 fn db_url_no_pwd_placeholder_test() {
     let url = "postgresql://user:pwd@host/db".to_string();
-    let cfg = ArgConfig::new(vec![url.clone()], SupportedDb::Postgres, "".to_string(), Some("secret123".to_string())).unwrap();
+    let cfg = ArgConfig::new(vec!["".to_string(), url.clone()], SupportedDb::Postgres, "".to_string(), Some("secret123".to_string())).unwrap();
     assert_eq!(url, cfg.db_url());
 }
 
@@ -198,7 +198,7 @@ fn all_explicit_flags_test() {
 #[test]
 fn custom_db_any_url_test() {
     let url = "somedb://connection-string".to_string();
-    let cfg = ArgConfig::new(vec![url.clone()], SupportedDb::Custom, "".to_string(), None).unwrap();
+    let cfg = ArgConfig::new(vec!["".to_string(), url.clone()], SupportedDb::Custom, "".to_string(), None).unwrap();
     assert_eq!(url, cfg.db_url);
 }
 
@@ -324,4 +324,340 @@ fn db_name_test() {
     assert_eq!(db_name("postgresql://user@host/?host=/var/run/postgresql"), None);
     // empty url -> None
     assert_eq!(db_name(""), None);
+}
+
+// ── coverage: helpers, key file, feature set, config file loading ───────────
+
+fn tmp_file(name: &str, content: &str) -> std::path::PathBuf {
+    let p = std::env::temp_dir().join(format!("marg-test-{}-{}", std::process::id(), name));
+    std::fs::write(&p, content).unwrap();
+    p
+}
+
+fn pem_text() -> String {
+    format!("-----BEGIN RSA PRIVATE KEY-----\n{}\n-----END RSA PRIVATE KEY-----\n", "A".repeat(300))
+}
+
+// from_args reads the test run's own args: under token a test-name filter would be the
+// token script and run; token_runs_only_the_token_script_test covers argv[0] there
+#[test]
+#[cfg(not(feature = "token"))]
+fn from_args_backward_compat_test() {
+    let cfg = ArgConfig::from_args().unwrap();
+    // postgres has a default url; sqlite and custom have none, and the app itself
+    // (argv[0]) is never the url - it was, under sqlite and custom, before 0.4.6
+    if matches!(crate::feature::featured(), SupportedDb::Postgres) {
+        assert!(!cfg.db_url.is_empty());
+    }
+    assert_ne!(std::env::args().next().unwrap_or_default(), cfg.db_url);
+}
+
+#[test]
+fn db_name_method_test() {
+    let cfg = new(vec!["", "postgresql://user@host/mydb"]);
+    assert_eq!(cfg.db_name(), Some("mydb".to_string()));
+    let cfg = new(vec!["", "postgresql://user@host"]);
+    assert_eq!(cfg.db_name(), None);
+}
+
+#[test]
+fn feature_is_valid_url_test() {
+    assert!(SupportedDb::Postgres.is_valid_url(&"postgresql://u@h/d".to_string()));
+    assert!(!SupportedDb::Postgres.is_valid_url(&"sqlite://x".to_string()));
+    assert!(SupportedDb::Custom.is_valid_url(&"anything".to_string()));
+    assert!(SupportedDb::Sqlite.is_valid_url(&"Data Source=app.db".to_string()));
+    let p = tmp_file("sqlite.db", "x");
+    assert!(SupportedDb::Sqlite.is_valid_url(&p.to_string_lossy().to_string()));
+    std::fs::remove_file(&p).unwrap();
+    assert!(!SupportedDb::Sqlite.is_valid_url(&"no-such-file-marg-test".to_string()));
+}
+
+#[test]
+fn feature_default_url_and_env_pwd_test() {
+    assert_eq!(
+        SupportedDb::Postgres.default_url("bob"),
+        "postgresql://bob:$PGPASSWORD@localhost/postgres?host=/var/run/postgresql"
+    );
+    assert!(SupportedDb::Postgres.default_url("").contains("$USER"));
+    assert_eq!(SupportedDb::Sqlite.default_url("bob"), "");
+    assert_eq!(SupportedDb::Custom.default_url("bob"), "");
+    assert_eq!(SupportedDb::Postgres.env_pwd(), "PGPASSWORD");
+    assert_eq!(SupportedDb::Sqlite.env_pwd(), "PGPASSWORD");
+    assert_eq!(SupportedDb::Custom.env_pwd(), "PGPASSWORD");
+}
+
+#[test]
+#[cfg(feature = "key")]
+fn key_file_read_test() {
+    let p = tmp_file("key.pem", &pem_text());
+    let path = p.to_string_lossy().to_string();
+    assert!(crate::key::is_key_file(&path));
+    let k = crate::key::KeyFile::new(path.clone(), Some("pass".to_string())).unwrap().unwrap();
+    assert_eq!(k.file, path);
+    assert_eq!(k.value.as_deref(), Some(pem_text().as_str()));
+    assert_eq!(k.passphrase.as_deref(), Some("pass"));
+    std::fs::remove_file(&p).unwrap();
+    assert!(!crate::key::is_key_file(&path));
+    assert!(crate::key::KeyFile::new(path, None).is_err());
+}
+
+#[test]
+fn key_file_not_a_key_test() {
+    let p = tmp_file("notkey.txt", "plain text, not a key");
+    assert!(!crate::key::is_key_file(&p.to_string_lossy()));
+    std::fs::remove_file(&p).unwrap();
+    let short = tmp_file("shortkey.pem", "-----BEGIN RSA PRIVATE KEY----- KEY-----");
+    assert!(!crate::key::is_key_file(&short.to_string_lossy()));
+    std::fs::remove_file(&short).unwrap();
+}
+
+#[test]
+#[cfg(feature = "key")]
+fn explicit_key_flag_test() {
+    let p = tmp_file("key-flag.pem", &pem_text());
+    let path = p.to_string_lossy().to_string();
+    let cfg = new(vec!["", "--key", path.as_str()]);
+    let pk = cfg.pk.clone().unwrap();
+    assert_eq!(pk.file, path);
+    std::fs::remove_file(&p).unwrap();
+}
+
+// without the key feature --key is ignored; with it, see explicit_key_flag_not_key_file_is_an_error_test
+#[test]
+#[cfg(not(feature = "key"))]
+fn explicit_key_flag_not_key_file_test() {
+    let cfg = new(vec!["", "--key", "/nonexistent-marg-test/key.pem"]);
+    assert!(cfg.pk.is_none());
+}
+
+#[test]
+fn load_config_file_test() {
+    let p = tmp_file(
+        "load.cfg",
+        "Db=postgresql://a@b/c\nconfig: public.tbl\n# comment=1\n; semi=2\n// slash=3\n[section]\nTTL = 7\nno separator here\n",
+    );
+    let mut cfg = std::collections::HashMap::new();
+    load(&p.to_string_lossy(), &mut cfg).unwrap();
+    std::fs::remove_file(&p).unwrap();
+    assert_eq!(cfg.get("db").map(String::as_str), Some("postgresql://a@b/c"));
+    assert_eq!(cfg.get("config").map(String::as_str), Some("public.tbl"));
+    assert_eq!(cfg.get("ttl").map(String::as_str), Some("7"));
+    assert_eq!(cfg.len(), 3);
+    assert!(load("/nonexistent-marg-test/file.cfg", &mut cfg).is_err());
+}
+
+// ── --file ───────────────────────────────────────────────────────────────────
+
+/// `--file <path>` loads that file's key=value lines into `cfg`; a path that is not there is an
+/// error that names it, and the file's lines do not take the place of the command line's
+#[test]
+fn explicit_file_flag_loads_the_file_named_after_it_test() {
+    let path = std::env::temp_dir().join(format!("marg-file-{}.conf", std::process::id()));
+    std::fs::write(&path, "upper=http://node1:7421\nLang = en\n# a comment\nkey_dir: /var/lib/x\n").unwrap();
+    let p = path.to_str().unwrap();
+    let cfg = new(vec!["app", "--file", p, "--db", "postgresql://u@localhost/db"]);
+    assert_eq!(cfg.cfg.get("upper").map(String::as_str), Some("http://node1:7421"));
+    assert_eq!(cfg.cfg.get("lang").map(String::as_str), Some("en"), "keys are lower case");
+    assert_eq!(cfg.cfg.get("key_dir").map(String::as_str), Some("/var/lib/x"));
+    assert_eq!(cfg.db_url, "postgresql://u@localhost/db", "the arguments after it still read");
+    let missing = ArgConfig::new(vec!["app".to_string(), "--file".to_string(), "/nonexistent/marg.conf".to_string()],
+        SupportedDb::Postgres, "".to_string(), None);
+    assert!(missing.is_err(), "a file that is not there");
+    let _ = std::fs::remove_file(&path);
+}
+
+// without the key feature a key file is never read: the same pem gives no key
+#[test]
+#[cfg(not(feature = "key"))]
+fn key_file_without_key_feature_test() {
+    let p = tmp_file("key-off.pem", &pem_text());
+    let path = p.to_string_lossy().to_string();
+    assert!(!crate::key::is_key_file(&path));
+    assert!(crate::key::KeyFile::new(path.clone(), Some("pass".to_string())).unwrap().is_none());
+    let cfg = new(vec!["", "--key", path.as_str()]);
+    assert!(cfg.pk.is_none());
+    std::fs::remove_file(&p).unwrap();
+}
+
+// ── input[0] and flag values are never guessed (0.4.6) ──────────────────────
+
+// input[0] is the app itself: with a dot it was the config table, under Custom the url
+#[test]
+fn app_name_is_not_guessed_test() {
+    let cfg = ArgConfig::new(vec!["./my.app".to_string()], SupportedDb::Postgres, "".to_string(), None).unwrap();
+    assert_eq!(get_exec_name("public.", "./my.app"), cfg.table);
+    assert_eq!("", cfg.token.cmd);
+    let url = "somedb://connection-string".to_string();
+    let cfg = ArgConfig::new(vec!["/usr/bin/app".to_string(), url.clone()], SupportedDb::Custom, "".to_string(), None).unwrap();
+    assert_eq!(url, cfg.db_url);
+    assert_eq!("", cfg.token.cmd);
+}
+
+// under Sqlite the app's own file exists, so it was taken as the database
+#[test]
+fn app_file_is_not_the_sqlite_db_test() {
+    let app = tmp_file("app-bin", "x");
+    let cfg = ArgConfig::new(
+        vec![app.to_string_lossy().to_string(), "Data Source=app.db".to_string()],
+        SupportedDb::Sqlite, "".to_string(), None,
+    ).unwrap();
+    assert_eq!("Data Source=app.db", cfg.db_url);
+    std::fs::remove_file(&app).unwrap();
+}
+
+// a flag's value is its own: never the token script, the table or the url
+#[test]
+fn flag_values_are_not_guessed_test() {
+    let url = "postgresql://user:pwd@host/db";
+    let id = "550e8400-e29b-41d4-a716-446655440000";
+    let cfg = new(vec![
+        "", "--db", url, "--uuid", id, "--ttl", "15", "--secret", "mysecret",
+    ]);
+    assert_eq!("", cfg.token.cmd);
+    // without the key feature --key is ignored, its value too (with it, a bad key is an error)
+    #[cfg(not(feature = "key"))]
+    assert_eq!("", new(vec!["", "--key", "/nonexistent-marg-test/key.pem"]).token.cmd);
+    assert_eq!(url, cfg.db_url);
+    assert_eq!(15, cfg.token.min);
+    let p = tmp_file("flag.conf", "ttl=5\n");
+    let path = p.to_string_lossy().to_string();
+    let cfg = new(vec!["app", "--file", path.as_str()]);
+    assert_eq!("", cfg.token.cmd);
+    assert_eq!(get_exec_name("public.", "app"), cfg.table);
+    std::fs::remove_file(&p).unwrap();
+    // a positional after the flags is still guessed
+    let cfg = new(vec!["", "--ttl", "15", "myschema.table"]);
+    assert_eq!("myschema.table", cfg.table);
+    assert_eq!("", cfg.token.cmd);
+}
+
+// with token the script runs: the app itself and the flag values must not run
+#[test]
+#[cfg(feature = "token")]
+fn token_runs_only_the_token_script_test() {
+    let cfg = ArgConfig::new(
+        vec!["/nonexistent-marg-test/app".to_string(), "--secret".to_string(), "/nonexistent-marg-test/secret".to_string()],
+        SupportedDb::Postgres, "".to_string(), None,
+    ).unwrap();
+    assert_eq!("", cfg.token.cmd);
+    assert!(cfg.token.value.is_none());
+    let cfg = new(vec!["", "--token", "echo pwd1"]);
+    assert_eq!("echo pwd1", cfg.token.cmd);
+    // the line end of the output is not part of the password
+    assert_eq!(Some("pwd1"), cfg.token.value.as_deref());
+    assert!(ArgConfig::new(
+        vec!["".to_string(), "--token".to_string(), "/nonexistent-marg-test/token".to_string()],
+        SupportedDb::Postgres, "".to_string(), None,
+    ).is_err());
+}
+
+// a non-ASCII key in a --file config: the separator's char position was used as a byte index
+#[test]
+fn file_config_non_ascii_key_test() {
+    let p = tmp_file("utf8.conf", "café=1\nключ: значение\n");
+    let path = p.to_string_lossy().to_string();
+    let cfg = new(vec!["", "--file", path.as_str()]);
+    assert_eq!(Some(&"1".to_string()), cfg.cfg.get("café"));
+    assert_eq!(Some(&"значение".to_string()), cfg.cfg.get("ключ"));
+    std::fs::remove_file(&p).unwrap();
+}
+
+// ── 0.4.6: no silent fallbacks ───────────────────────────────────────────────
+
+fn try_new(args: Vec<&str>) -> Result<ArgConfig, String> {
+    ArgConfig::new(args.into_iter().map(str::to_string).collect(), SupportedDb::Postgres, "".to_string(), None)
+}
+
+// a value flag at the end, with an empty value or with another flag after it
+#[test]
+fn flag_without_value_is_an_error_test() {
+    for f in ["--file", "--db", "--config", "--token", "--ttl", "--key", "--uuid", "--secret"] {
+        let want = format!("{f} needs a value");
+        assert_eq!(Err(want.clone()), try_new(vec!["", f]).map(|_| ()));
+        assert_eq!(Err(want.clone()), try_new(vec!["", f, ""]).map(|_| ()));
+        assert_eq!(Err(want), try_new(vec!["", f, "--ttl", "15"]).map(|_| ()));
+    }
+    // an empty positional is never the url, the table or the token
+    let cfg = ArgConfig::new(vec!["".to_string(), "".to_string()], SupportedDb::Custom, "".to_string(), None).unwrap();
+    assert_eq!("", cfg.db_url);
+    assert_eq!("", cfg.token.cmd);
+}
+
+// a bad uuid is an error, from --uuid and from the config file; a good one in the file counts
+#[test]
+fn bad_uuid_is_an_error_test() {
+    let e = try_new(vec!["", "--uuid", "garbage"]).unwrap_err();
+    assert!(e.starts_with("uuid [garbage]"), "{e}");
+    let bad = tmp_file("uuid-bad.conf", "uuid: garbage\n");
+    let path = bad.to_string_lossy().to_string();
+    assert!(try_new(vec!["", "--file", path.as_str()]).unwrap_err().starts_with("uuid [garbage]"));
+    std::fs::remove_file(&bad).unwrap();
+    let id = "550e8400-e29b-41d4-a716-446655440000";
+    let good = tmp_file("uuid-good.conf", &format!("uuid: {id}\n"));
+    let path = good.to_string_lossy().to_string();
+    let cfg = new(vec!["", "--file", path.as_str()]);
+    assert_eq!(Uuid::parse_str(id).unwrap(), cfg.uuid);
+    assert!(!cfg.uuid_gen);
+    std::fs::remove_file(&good).unwrap();
+}
+
+// an '@' before ":$P" (a query string) is not the end of the password: no panic, no change
+#[test]
+fn db_url_at_before_placeholder_test() {
+    let url = "postgresql://u@h/d?a=:$PW";
+    let cfg = new(vec!["", "--db", url]);
+    assert_eq!(url, cfg.db_url());
+    let cfg = ArgConfig::new(
+        vec!["".to_string(), "--db".to_string(), "postgresql://u:$PWD@h/d?x=a@b".to_string()],
+        SupportedDb::Postgres, "".to_string(), Some("pw".to_string()),
+    ).unwrap();
+    assert_eq!("postgresql://u:pw@h/d?x=a@b", cfg.db_url());
+}
+
+// with the key feature a key that is not one is an error, from --key and from the config file
+#[test]
+#[cfg(feature = "key")]
+fn explicit_key_flag_not_key_file_is_an_error_test() {
+    let e = try_new(vec!["", "--key", "/nonexistent-marg-test/key.pem"]).unwrap_err();
+    assert!(e.contains("/nonexistent-marg-test/key.pem"), "{e}");
+    let notkey = tmp_file("notkey.pem", "plain text, not a key");
+    let path = notkey.to_string_lossy().to_string();
+    assert_eq!(Err(format!("[{path}] not a key file")), try_new(vec!["", "--key", path.as_str()]).map(|_| ()));
+    let conf = tmp_file("key.conf", &format!("key: {path}\n"));
+    let conf_path = conf.to_string_lossy().to_string();
+    assert_eq!(Err(format!("[{path}] not a key file")), try_new(vec!["", "--file", conf_path.as_str()]).map(|_| ()));
+    std::fs::remove_file(&notkey).unwrap();
+    std::fs::remove_file(&conf).unwrap();
+}
+
+// a shell runs the token script: a pipe works
+#[test]
+#[cfg(feature = "token")]
+fn token_script_runs_in_a_shell_test() {
+    let cfg = new(vec!["", "--token", "echo pwd1 | tr p q"]);
+    assert_eq!(Some("qwd1"), cfg.token.value.as_deref());
+    let e = try_new(vec!["", "--token", "exit 3"]).unwrap_err();
+    assert!(e.starts_with("[exit 3]"), "{e}");
+}
+
+// a short key (Ed25519, ~120 bytes) and one with text before it are keys; a certificate is not
+#[test]
+#[cfg(feature = "key")]
+fn key_text_short_and_preamble_test() {
+    // Ed25519 size; the body is filler, not a key (secret scanners)
+    let ed = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n", "A".repeat(64));
+    let ed = ed.as_str();
+    let p = tmp_file("ed25519.pem", ed);
+    let path = p.to_string_lossy().to_string();
+    assert!(crate::key::is_key_file(&path));
+    assert_eq!(Some(ed), new(vec!["", "--key", path.as_str()]).pk.unwrap().value.as_deref());
+    std::fs::remove_file(&p).unwrap();
+    let bag = format!("Bag Attributes\n    localKeyID: 01 02\n{}", pem_text());
+    let p = tmp_file("bag.pem", &bag);
+    assert!(crate::key::is_key_file(&p.to_string_lossy()));
+    std::fs::remove_file(&p).unwrap();
+    let cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+    let p = tmp_file("cert.pem", cert);
+    assert!(!crate::key::is_key_file(&p.to_string_lossy()));
+    std::fs::remove_file(&p).unwrap();
 }
