@@ -26,6 +26,10 @@ const CMD_SECRET: &str = "secret";
 const CMD_PASS: &str = "PASSPHRASE";
 /// self host or node id
 const CMD_UUID: &str = "uuid";
+/// the flags that take a value: `--name value` or `--name=value`
+const VALUE_FLAGS: [&str; 8] = [CMD_FILE, CMD_DB, CMD_TBL, CMD_TOKEN, CMD_TTL, CMD_KEY, CMD_UUID, CMD_SECRET];
+/// the config file's older name for the key file (`key:` is the one the env shares)
+const CFG_PK: &str = "pk";
 
 
 /// App startup args:
@@ -54,8 +58,7 @@ const CMD_UUID: &str = "uuid";
 ///   <br>Also: compile with keep_env_secret feature to not remove from env
 ///
 /// Alternative configuration:
-/// - file name, usually the first arg
-///   - or prefix with '--file '
+/// - file name: '--file ' only (no positional guess)
 ///
 /// File format:
 ///  - db: OR db=
@@ -63,12 +66,13 @@ const CMD_UUID: &str = "uuid";
 ///  - uuid: OR uuid=
 ///  - token: OR token=
 ///  - ttl: OR ttl=
-///  - pk: OR pk=
+///  - key: OR key= (pk: OR pk= too)
 ///
 /// params passed in cmd line override params loaded from file & env.
 ///
 /// Errors: a value flag (--file, --db, --config, --token, --ttl, --key, --uuid, --secret)
-/// with no value, an empty one or another flag after it; a uuid that is not one; with
+/// with no value, an empty one or another flag after it (`--db=url` is fine); a ttl that
+/// is not a number of minutes; an empty or non UTF-8 SECRET when --secret is not given; a uuid that is not one; with
 /// feature 'key' a key file (--key, env or file) that is not a key.
 ///
 /// env:
@@ -133,7 +137,13 @@ impl ArgConfig {
         };
         let input: Vec<String> = std::env::args_os().map(|e| e.to_string_lossy().to_string()).collect();
 
+        // the arg after a value flag is its value, never --version / -V
+        let mut value_next = false;
         for arg in input.iter().skip(1) {
+            if std::mem::take(&mut value_next) {
+                continue;
+            }
+            value_next = arg.strip_prefix("--").is_some_and(|v| VALUE_FLAGS.contains(&v));
             if arg == "--version" || arg == "-V" {
                 println!("{app_name} {app_version}");
                 println!("{PROVIDED_BY}");
@@ -169,16 +179,27 @@ impl ArgConfig {
             }
             // not one of ours (the app's own flag) or not a flag: left to the guess below
             let Some(v) = input[i].strip_prefix("--") else { continue };
-            if ![CMD_FILE, CMD_DB, CMD_TBL, CMD_TOKEN, CMD_TTL, CMD_KEY, CMD_UUID, CMD_SECRET].contains(&v) {
+            // `--name=value`: the value is in the same arg
+            let (v, inline) = match v.split_once('=') {
+                Some((name, value)) => (name, Some(value)),
+                None => (v, None),
+            };
+            if !VALUE_FLAGS.contains(&v) {
                 continue;
             }
-            // the next arg is the value: none, an empty one or another flag is an error
-            let value = match input.get(i + 1) {
-                Some(x) if !x.is_empty() && !x.starts_with("--") => x.to_string(),
-                _ => return Err(format!("--{v} needs a value")),
+            // the value: none, an empty one or (`--name value`) another flag is an error
+            let value = match inline {
+                Some(x) if !x.is_empty() => x.to_string(),
+                Some(_) => return Err(format!("--{v} needs a value")),
+                None => match input.get(i + 1) {
+                    Some(x) if !x.is_empty() && !x.starts_with("--") => {
+                        taken[i + 1] = true;
+                        ignore_next = true;
+                        x.to_string()
+                    }
+                    _ => return Err(format!("--{v} needs a value")),
+                },
             };
-            taken[i + 1] = true;
-            ignore_next = true;
             match v {
                 // the file named after it: `--file <path>` (before 0.4.6 a file named "file")
                 CMD_FILE => load(&value, &mut cfg)?,
@@ -234,13 +255,17 @@ impl ArgConfig {
         }
 
         if let Some(a) = std::env::var_os(CMD_SECRET.to_uppercase()) {
-            // the command line wins (--secret); SECRET leaves the env either way
-            if secret.is_none() {
-                secret = Some(a.to_str().map(|v| v.to_string()).unwrap_or("".to_string()));
-            }
             #[cfg(not(feature="keep_env_secret"))]
             unsafe {
                 std::env::remove_var(CMD_SECRET.to_uppercase()); // the name read above, not `secret`
+            }
+            // the command line wins (--secret); SECRET leaves the env either way (above)
+            if secret.is_none() {
+                match a.to_str() {
+                    Some(v) if !v.is_empty() => secret = Some(v.to_string()),
+                    Some(_) => return Err("SECRET is empty".to_string()),
+                    None => return Err("SECRET is not UTF-8".to_string()),
+                }
             }
         }
 
@@ -255,7 +280,8 @@ impl ArgConfig {
                 pwd
             )?,
             pk: KeyFile::new(
-                pk.unwrap_or(get_env_or_cfg(CMD_KEY, &cfg, "")),
+                // env `key`, then the file's `key:`, then its `pk:`
+                pk.unwrap_or(get_env_or_cfg(CMD_KEY, &cfg, cfg.get(CFG_PK).map(String::as_str).unwrap_or(""))),
                 std::env::var_os(CMD_PASS).map(|p| p.to_string_lossy().to_string()),
             )?,
             cfg,

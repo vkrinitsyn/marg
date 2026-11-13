@@ -205,3 +205,36 @@ fn key_env_not_a_key_test() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("not a key file"), "{stderr}");
 }
+
+// an empty SECRET is an error when --secret is not given; with --secret the flag wins
+#[test]
+fn empty_secret_env_test() {
+    let d = Dir::new("secret-empty");
+    let out = run(d.path(), &[], &[("SECRET", "")]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("SECRET is empty"), "{stderr}");
+    let out = run(d.path(), &["--secret", SECRET16], &[("SECRET", "")]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout.trim_end(), format!("Parsed:    {} [16]", SECRET16));
+}
+
+// --version after a value flag is not a version request: the flag has no value
+#[test]
+fn version_as_flag_value_test() {
+    let d = Dir::new("version-value");
+    for flag in ["--version", "-V"] {
+        let out = run(d.path(), &["--db", flag], &[]);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(!stdout.contains("DBinvent"), "{flag}: {stdout}");
+    }
+    let out = run(d.path(), &["--db", "--version"], &[]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--db needs a value"), "{stderr}");
+    // after a value flag's value, it is one
+    let out = run(d.path(), &["--db=postgresql://h/d", "--version"], &[]);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("DBinvent"));
+}

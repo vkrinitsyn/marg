@@ -661,3 +661,66 @@ fn key_text_short_and_preamble_test() {
     assert!(!crate::key::is_key_file(&p.to_string_lossy()));
     std::fs::remove_file(&p).unwrap();
 }
+
+// ── 0.4.6: the second review ────────────────────────────────────────────────
+
+// the config file names the key file `key:`; `pk:` (the old doc's name) is read too
+#[test]
+#[cfg(feature = "key")]
+fn config_file_key_and_pk_test() {
+    let k = tmp_file("cfg-key.pem", &pem_text());
+    let kp = k.to_string_lossy().to_string();
+    for name in ["key", "pk"] {
+        let conf = tmp_file(&format!("{name}.conf"), &format!("{name}: {kp}\n"));
+        let cp = conf.to_string_lossy().to_string();
+        let cfg = new(vec!["", "--file", cp.as_str()]);
+        assert_eq!(Some(kp.as_str()), cfg.pk.as_ref().map(|p| p.file.as_str()), "{name}:");
+        std::fs::remove_file(&conf).unwrap();
+    }
+    std::fs::remove_file(&k).unwrap();
+}
+
+// a ttl that is not a number of minutes is an error, from --ttl and from the file
+#[test]
+fn bad_ttl_is_an_error_test() {
+    let e = try_new(vec!["", "--ttl", "abc"]).unwrap_err();
+    assert!(e.starts_with("ttl [abc]"), "{e}");
+    let conf = tmp_file("ttl-bad.conf", "ttl=abc\n");
+    let cp = conf.to_string_lossy().to_string();
+    assert!(try_new(vec!["", "--file", cp.as_str()]).unwrap_err().starts_with("ttl [abc]"));
+    std::fs::remove_file(&conf).unwrap();
+    assert_eq!(30, new(vec!["", "--ttl", "30"]).token.min);
+    // none given: the default, 1 minute
+    assert_eq!(1, new(vec![""]).token.min);
+}
+
+// `--name=value` sets the same as `--name value`; an empty one is the missing-value error
+#[test]
+fn flag_equals_form_test() {
+    let url = "postgresql://user:pwd@host/db";
+    let id = "550e8400-e29b-41d4-a716-446655440000";
+    let db = format!("--db={url}");
+    let u = format!("--uuid={id}");
+    let cfg = new(vec!["", db.as_str(), "--config=s.t", u.as_str(), "--ttl=15", "--secret=s1"]);
+    assert_eq!(url, cfg.db_url);
+    assert_eq!("s.t", cfg.table);
+    assert_eq!(Uuid::parse_str(id).unwrap(), cfg.uuid);
+    assert_eq!(15, cfg.token.min);
+    assert_eq!(Some("s1".to_string()), cfg.secret);
+    assert_eq!("", cfg.token.cmd);
+    // a value may hold '=' and start with "--" when given this way
+    assert_eq!(Some("a=b".to_string()), new(vec!["", "--secret=a=b"]).secret);
+    assert_eq!(Some("--x".to_string()), new(vec!["", "--secret=--x"]).secret);
+    let conf = tmp_file("eq.conf", "ttl=7\n");
+    let f = format!("--file={}", conf.to_string_lossy());
+    assert_eq!(7, new(vec!["", f.as_str()]).token.min);
+    std::fs::remove_file(&conf).unwrap();
+    #[cfg(not(feature = "token"))]
+    assert_eq!("get-token.sh", new(vec!["", "--token=get-token.sh"]).token.cmd);
+    for f in ["--file=", "--db=", "--config=", "--token=", "--ttl=", "--key=", "--uuid=", "--secret="] {
+        let name = f.trim_end_matches('=');
+        assert_eq!(Err(format!("{name} needs a value")), try_new(vec!["", f]).map(|_| ()));
+    }
+    // the app's own flags are left alone, `=` or not
+    assert_eq!("", new(vec!["", "--port=5432", "--mode"]).token.cmd);
+}

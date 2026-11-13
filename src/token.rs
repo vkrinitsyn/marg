@@ -22,7 +22,8 @@ pub struct Token {
 
 impl Token {
     pub(crate) fn new(cmd: String, ttl: String, pwd: Option<String>) -> Result<Self, String> {
-        let min = ttl.parse::<u16>().unwrap_or(60);
+        // minutes; not a number is an error (before 0.4.6 a silent 60)
+        let min = ttl.parse::<u16>().map_err(|e| format!("ttl [{ttl}] {e}"))?;
         let t = Token {
             refreshed: Instant::now(),
             ttl: Duration::from_secs(min as u64 * 60),

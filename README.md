@@ -82,9 +82,15 @@ Arguments can be passed positionally (auto-detected by format) or with explicit 
 
 The first arg (the app itself) and each flag's value are never guessed as another argument.
 
+A value flag also takes `--name=value` (`--db=postgresql://...`). The config file names the
+key file `key:` (`pk:` is read too).
+
 Errors, not silent defaults: a value flag at the end, with an empty value or with another
-`--flag` after it (`--db --ttl 15`); a uuid that is not one (flag, env or file); with
-feature `key`, a key file that is not a key (from `--key`, env or the config file).
+`--flag` after it (`--db --ttl 15`); a uuid that is not one (flag, env or file); a ttl that
+is not a number of minutes; an empty or non UTF-8 `SECRET` when `--secret` is not given;
+with feature `key`, a key file that is not a key (from `--key`, env or the config file).
+`--version` / `-V` count only as flags, not as another flag's value (`--db --version` is
+the missing-value error).
 
 The token script runs in a shell (`sh -c`, `cmd /C` on Windows), so quotes and pipes work
 (`az account get-access-token ... | jq -r .accessToken`); the line end of its output is
@@ -107,7 +113,7 @@ config: myschema.settings
 uuid: 550e8400-e29b-41d4-a716-446655440000
 token: get-token.sh
 ttl: 15
-pk: /path/to/private.key
+key: /path/to/private.key
 ```
 
 ### Fields
